@@ -100,6 +100,7 @@ from strategy import (
 
 logger = logging.getLogger("eth_grid_bot.main")
 
+BOT_VERSION = "1.1"
 CONFIG_PATH = "config.json"
 CANDLE_CLOSE_OFFSET_SEC = 1.0  # evaluate the grid 1s after each timeframe boundary
 RSI_POLL_INTERVAL_SEC = 15.0  # how often the tick loop re-checks for a newly-closed RSI candle
@@ -166,6 +167,7 @@ class GridBotOrchestrator:
     # -- lifecycle -----------------------------------------------------------
 
     async def start(self) -> None:
+        logger.info("[INFO] Avvio Bot Trading - v%s", BOT_VERSION)
         await self.exchange.setup()
         await self._bootstrap_position()
         logger.info("Bot running: cycle_id=%d range_base_price=%.4f grid_step_pct=%.3f%% base_notional=%.2f "

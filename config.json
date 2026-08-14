@@ -1,17 +1,8 @@
 {
-  "_comment": "Only-Short Grid Bot config. The grid is 100% dynamic: no fixed price list. grid_step_pct defines the geometric spacing between levels (Level_N = base_price * (1 + grid_step_pct/100)^N); base_price (Range 0) is re-anchored to the live market price at startup and after every Take Profit reset, so it is never a config value either. Credentials: prefer BYBIT_API_KEY/BYBIT_API_SECRET env vars; exchange.api_key/api_secret below are the fallback the bot always falls back to.",
+  "_comment": "Only-Short Grid Bot config (v1.1). Secrets and environment-selection live in .env (see .env.example), loaded via python-dotenv -- NOT in this file: BYBIT_API_KEY, BYBIT_API_SECRET, USE_TESTNET, SYMBOL, GRID_STEP_PERCENT. The grid is 100% dynamic: no fixed price list. grid_step_pct defines the geometric spacing between levels (Level_N = base_price * (1 + grid_step_pct/100)^N); base_price (Range 0) is re-anchored to the live market price at startup and after every Take Profit reset, so it is never a config value either.",
 
   "exchange": {
     "id": "bybit",
-    "api_key": "F3HSaai0fMa1ame2mA",
-    "api_secret": "vB4NA9uxtQvS7D6R1eklyAWJHBx9i7E3ARTi",
-    "demo": true,
-    "urls": {
-      "api": {
-        "public": "https://api-demo.bybit.com",
-        "private": "https://api-demo.bybit.com"
-      }
-    },
     "options": {
       "defaultType": "swap",
       "adjustForTimeDifference": true,
@@ -19,7 +10,7 @@
     }
   },
 
-  "_comment_symbol_timeframe": "symbol accepts any CCXT/Bybit V5 perpetual, e.g. 'ETH/USDT:USDT' or 'BTC/USDC:USDC'. timeframe drives the grid-evaluation clock automatically: '5m' evaluates at XX:05:01/XX:10:01/... (fast testing), '1h' evaluates at HH:00:01 (production).",
+  "_comment_symbol_timeframe": "symbol and grid_step_pct below are fallback defaults, overridden by .env's SYMBOL / GRID_STEP_PERCENT when set. timeframe drives the grid-evaluation clock automatically: '5m' evaluates at XX:05:01/XX:10:01/... (fast testing), '1h' evaluates at HH:00:01 (production).",
   "symbol": "ETH/USDT:USDT",
   "timeframe": "1m",
   "leverage": 100,

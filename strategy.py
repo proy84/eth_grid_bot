@@ -47,14 +47,31 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
 
+from dotenv import load_dotenv
+
 from fees import EntryFill
 
 logger = logging.getLogger("eth_grid_bot.strategy")
+
+# Loads .env into the process environment (no-op if the file doesn't exist).
+# Called at import time so BYBIT_API_KEY/BYBIT_API_SECRET/USE_TESTNET/SYMBOL/
+# GRID_STEP_PERCENT are available to StrategyConfig.load() and to
+# exchange.py's own os.environ.get() lookups, wherever this module is
+# imported first.
+load_dotenv()
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 # --------------------------------------------------------------------------- #
@@ -98,6 +115,7 @@ class StrategyConfig:
     exchange_urls: Optional[dict]
     api_key: str
     api_secret: str
+    use_testnet: bool
     stress_test_enabled: bool
     stress_test_base_interval_sec: float
     stress_test_tick_mode_interval_sec: float
@@ -113,11 +131,11 @@ class StrategyConfig:
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
         stress_test = raw.get("stress_test", {})
         return StrategyConfig(
-            symbol=raw["symbol"],
+            symbol=os.environ.get("SYMBOL") or raw["symbol"],
             timeframe=raw["timeframe"],
             leverage=int(raw["leverage"]),
             margin_mode=raw["margin_mode"],
-            grid_step_pct=float(raw["grid_step_pct"]) / 100.0,
+            grid_step_pct=float(os.environ.get("GRID_STEP_PERCENT") or raw["grid_step_pct"]) / 100.0,
             base_notional_usdt=float(raw["base_notional_usdt"]),
             take_profit_net_breakeven_pct=float(raw["take_profit"]["net_breakeven_pct"]),
             taker_rate=float(raw["fees"]["taker_rate"]),
@@ -132,8 +150,9 @@ class StrategyConfig:
             exchange_id=raw["exchange"]["id"],
             exchange_options=raw["exchange"].get("options", {}),
             exchange_urls=raw["exchange"].get("urls"),
-            api_key=raw["exchange"].get("api_key", ""),
-            api_secret=raw["exchange"].get("api_secret", ""),
+            api_key=os.environ.get("BYBIT_API_KEY") or raw["exchange"].get("api_key", ""),
+            api_secret=os.environ.get("BYBIT_API_SECRET") or raw["exchange"].get("api_secret", ""),
+            use_testnet=_env_bool("USE_TESTNET", bool(raw["exchange"].get("demo", True))),
             stress_test_enabled=bool(stress_test.get("enabled", False)),
             stress_test_base_interval_sec=float(stress_test.get("base_interval_sec", 300.0)),
             stress_test_tick_mode_interval_sec=float(stress_test.get("tick_mode_interval_sec", 1.0)),

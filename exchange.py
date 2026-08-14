@@ -21,16 +21,19 @@ The fix used here: two CCXT instances.
     Market data is identical between demo and mainnet (same order book),
     so there is no correctness downside to reading it from production.
   - `self._private` -- authenticated with apiKey/secret, `private` URL
-    pinned to the Bybit DEMO host. Used only for orders, positions,
-    balance, leverage and margin mode. Its market catalogue is seeded from
-    `self._public` via `set_markets()` so it never has to call the
-    demo-incompatible `load_markets()` itself.
+    pinned to the Bybit DEMO host WHEN `USE_TESTNET=true` (.env, default).
+    With `USE_TESTNET=false` it uses the default production host instead --
+    REAL FUNDS. Used only for orders, positions, balance, leverage and
+    margin mode. Its market catalogue is seeded from `self._public` via
+    `set_markets()` so it never has to call the demo-incompatible
+    `load_markets()` itself.
 
-Both apiKey and secret are always read from config.json (`exchange.api_key`
-/ `exchange.api_secret`), with `BYBIT_API_KEY` / `BYBIT_API_SECRET` env
-vars as an optional override -- this is what fixes the previous
-"bybit requires apiKey credential" AuthenticationError, which was caused by
-silently handing CCXT an empty string.
+Both apiKey and secret are read from the `BYBIT_API_KEY` / `BYBIT_API_SECRET`
+environment variables (via `.env`, see `.env.example` -- loaded by
+`strategy.py`'s `load_dotenv()` call), never committed to config.json. This
+is what originally fixed the "bybit requires apiKey credential"
+AuthenticationError, which was caused by silently handing CCXT an empty
+string.
 
 Responsibilities:
   - Connection setup: leverage, CROSS margin mode, demo/production URL split.
@@ -109,17 +112,24 @@ class ExchangeClient:
             "options": options,
         })
 
-        # Private trading/account: authenticated, pinned to the demo host.
+        # Private trading/account: authenticated. USE_TESTNET=true (.env, default)
+        # pins it to Bybit's Demo Trading host (paper money); USE_TESTNET=false
+        # leaves it on the default production host -- REAL FUNDS.
+        private_urls = {"api": {"private": BYBIT_DEMO_BASE_URL}} if cfg.use_testnet else {}
         self._private = ccxt_async.bybit({
             "apiKey": api_key,
             "secret": api_secret,
             "enableRateLimit": True,
             "options": options,
-            "urls": {"api": {"private": BYBIT_DEMO_BASE_URL}},
+            "urls": private_urls,
         })
 
-        logger.info("ExchangeClient configured: symbol=%s timeframe=%s demo_url=%s apiKey=%s...",
-                    cfg.symbol, cfg.timeframe, BYBIT_DEMO_BASE_URL, api_key[:4] if api_key else "")
+        if cfg.use_testnet:
+            logger.info("ExchangeClient configured: symbol=%s timeframe=%s mode=DEMO (%s) apiKey=%s...",
+                        cfg.symbol, cfg.timeframe, BYBIT_DEMO_BASE_URL, api_key[:4] if api_key else "")
+        else:
+            logger.warning("ExchangeClient configured: symbol=%s timeframe=%s mode=PRODUCTION (LIVE FUNDS) "
+                            "apiKey=%s...", cfg.symbol, cfg.timeframe, api_key[:4] if api_key else "")
 
     @staticmethod
     def _resolve_credentials(cfg: StrategyConfig) -> Tuple[str, str]:
