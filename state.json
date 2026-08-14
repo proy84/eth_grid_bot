@@ -1,0 +1,39 @@
+{
+  "live": {
+    "timestamp_ms": 1786364245589,
+    "symbol": "ETH/USDT:USDT",
+    "cycle_id": 1,
+    "mark_price": 1918.02,
+    "avg_entry_price": 0.0,
+    "breakeven_gross_price": 0.0,
+    "breakeven_net_price": 0.0,
+    "total_qty": 0,
+    "total_notional_usdt": 0,
+    "margin_used_usdt": 0.0,
+    "current_fib_level": 0,
+    "range_zero_index": 3,
+    "base_notional_usdt": 50.0,
+    "gross_pnl_usdt": -0.0,
+    "net_pnl_usdt": 0.0,
+    "net_pnl_pct_on_margin": 0.0,
+    "open_fees_usdt": 0,
+    "estimated_close_fee_usdt": 0.0,
+    "funding_cashflow_usdt": 0,
+    "trailing_active": false,
+    "trailing_peak_pct": null
+  },
+  "current_cycle_orders": [],
+  "performance_summary": {
+    "completed_cycles": 0,
+    "total_orders_executed": 0,
+    "avg_orders_per_cycle": 0.0,
+    "avg_net_profit_usdt": 0.0,
+    "max_drawdown_usdt": 0.0,
+    "max_fibonacci_level": 0,
+    "avg_cycle_duration_sec": 0.0,
+    "total_fees_usdt": 0.0,
+    "total_funding_usdt": 0.0,
+    "cumulative_net_pnl_usdt": 0.0
+  },
+  "recent_cycles": []
+}

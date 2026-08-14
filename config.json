@@ -1,0 +1,73 @@
+{
+  "_comment": "Only-Short Grid Bot config. The grid is 100% dynamic: no fixed price list. grid_step_pct defines the geometric spacing between levels (Level_N = base_price * (1 + grid_step_pct/100)^N); base_price (Range 0) is re-anchored to the live market price at startup and after every Take Profit reset, so it is never a config value either. Credentials: prefer BYBIT_API_KEY/BYBIT_API_SECRET env vars; exchange.api_key/api_secret below are the fallback the bot always falls back to.",
+
+  "exchange": {
+    "id": "bybit",
+    "api_key": "F3HSaai0fMa1ame2mA",
+    "api_secret": "vB4NA9uxtQvS7D6R1eklyAWJHBx9i7E3ARTi",
+    "demo": true,
+    "urls": {
+      "api": {
+        "public": "https://api-demo.bybit.com",
+        "private": "https://api-demo.bybit.com"
+      }
+    },
+    "options": {
+      "defaultType": "swap",
+      "adjustForTimeDifference": true,
+      "recvWindow": 10000
+    }
+  },
+
+  "_comment_symbol_timeframe": "symbol accepts any CCXT/Bybit V5 perpetual, e.g. 'ETH/USDT:USDT' or 'BTC/USDC:USDC'. timeframe drives the grid-evaluation clock automatically: '5m' evaluates at XX:05:01/XX:10:01/... (fast testing), '1h' evaluates at HH:00:01 (production).",
+  "symbol": "ETH/USDT:USDT",
+  "timeframe": "1m",
+  "leverage": 100,
+  "margin_mode": "cross",
+  "position_side": "short",
+
+  "grid_step_pct": 0.5,
+  "base_notional_usdt": 200.0,
+
+  "_comment_take_profit": "Fixed take profit: closes the whole position at market the instant mark_price crosses net_breakeven_pct% BELOW the current Break-Even NETTO price (already fee/funding-adjusted). No trailing/retracement wait -- fires the moment the target is crossed. net_breakeven_pct is a real PRICE percentage, not a leveraged-margin percentage (at 100x leverage, 3% price = ~300% PnL on margin).",
+  "take_profit": {
+    "net_breakeven_pct": 1.0
+  },
+
+  "fees": {
+    "taker_rate": 0.00055,
+    "maker_rate": 0.0002
+  },
+
+  "auto_compound": {
+    "enabled": true,
+    "percentage": 5.0
+  },
+
+  "polling": {
+    "tick_poll_interval_sec": 2,
+    "funding_poll_interval_sec": 300
+  },
+
+  "paths": {
+    "trade_history_path": "trade_history.json",
+    "state_export_path": "bot_state.json"
+  },
+
+  "risk": {
+    "max_fib_level": 200
+  },
+
+  "_comment_stress_test": "High-frequency time-acceleration stress test mode. When enabled=true it REPLACES the normal timeframe/candle-close scheduler: all ranges evaluate at base_interval_sec (flat, no per-range table) UNLESS RSI tick mode is active, in which case grid orders fire every tick_mode_interval_sec instead. RSI tick mode is triggered by an RSI(rsi_period) reading on rsi_timeframe crossing UP through rsi_overbought_threshold (a fresh crossing from below -- staying overbought does not re-trigger it), and stays on until the position's Break-Even price catches up to the market's current grid band, at which point Range 0 re-anchors there and the base cadence resumes. unlimited_fib_level=true removes the risk.max_fib_level safety cap for this mode only. Set enabled=false to fall back to the normal production scheduler/cap untouched.",
+  "stress_test": {
+    "enabled": true,
+    "base_interval_sec": 300,
+    "tick_mode_interval_sec": 1,
+    "rsi_timeframe": "5m",
+    "rsi_period": 14,
+    "rsi_overbought_threshold": 78,
+    "neutral_zone_enabled": true,
+    "neutral_zone_percent": 0.15,
+    "unlimited_fib_level": true
+  }
+}

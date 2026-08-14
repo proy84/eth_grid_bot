@@ -1,0 +1,439 @@
+{
+  "live": {
+    "timestamp_ms": 1786644863067,
+    "symbol": "ETH/USDT:USDT",
+    "timeframe": "1m",
+    "cycle_id": 24,
+    "mark_price": 1878.56,
+    "avg_entry_price": 1875.4444444444446,
+    "breakeven_gross_price": 1875.4444444444446,
+    "breakeven_net_price": 1874.0632845710359,
+    "total_qty": 1.98,
+    "total_notional_usdt": 3713.38,
+    "margin_used_usdt": 37.1338,
+    "current_fib_level": 3,
+    "range_base_price": 1859.7711442786072,
+    "base_notional_usdt": 210.0,
+    "gross_pnl_usdt": -6.168799999999642,
+    "net_pnl_usdt": -8.908393472450644,
+    "net_pnl_pct_on_margin": -23.989986137833036,
+    "open_fees_usdt": 2.0423590000000003,
+    "estimated_close_fee_usdt": 2.0457518400000003,
+    "funding_cashflow_usdt": 1.348517367549,
+    "take_profit_target_price": 1855.3226517253254,
+    "take_profit_net_breakeven_pct": 1.0
+  },
+  "current_cycle_orders": [
+    {
+      "timestamp_ms": 1786639161122,
+      "fib_level": 1,
+      "kind": "range_zero_reset_immediate",
+      "price": 1868.42,
+      "qty": 0.11,
+      "notional_usdt": 205.52620000000002,
+      "fee_usdt": 0.11303941000000002
+    },
+    {
+      "timestamp_ms": 1786639314445,
+      "fib_level": 1,
+      "kind": "range_shift_base",
+      "price": 1863.38,
+      "qty": 0.11,
+      "notional_usdt": 204.9718,
+      "fee_usdt": 0.11273449
+    },
+    {
+      "timestamp_ms": 1786639615519,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1871.06,
+      "qty": 0.11,
+      "notional_usdt": 205.8166,
+      "fee_usdt": 0.11319913000000001
+    },
+    {
+      "timestamp_ms": 1786639916607,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1874.95,
+      "qty": 0.11,
+      "notional_usdt": 206.24450000000002,
+      "fee_usdt": 0.11343447500000002
+    },
+    {
+      "timestamp_ms": 1786640217682,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1873.8,
+      "qty": 0.11,
+      "notional_usdt": 206.118,
+      "fee_usdt": 0.1133649
+    },
+    {
+      "timestamp_ms": 1786640518750,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1874.23,
+      "qty": 0.11,
+      "notional_usdt": 206.1653,
+      "fee_usdt": 0.11339091500000001
+    },
+    {
+      "timestamp_ms": 1786640819790,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1875.9,
+      "qty": 0.11,
+      "notional_usdt": 206.34900000000002,
+      "fee_usdt": 0.11349195000000002
+    },
+    {
+      "timestamp_ms": 1786641121108,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1875.68,
+      "qty": 0.11,
+      "notional_usdt": 206.3248,
+      "fee_usdt": 0.11347864000000002
+    },
+    {
+      "timestamp_ms": 1786641422182,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1877.3,
+      "qty": 0.11,
+      "notional_usdt": 206.503,
+      "fee_usdt": 0.11357665
+    },
+    {
+      "timestamp_ms": 1786641723229,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1876.76,
+      "qty": 0.11,
+      "notional_usdt": 206.4436,
+      "fee_usdt": 0.11354398
+    },
+    {
+      "timestamp_ms": 1786642024342,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1876.88,
+      "qty": 0.11,
+      "notional_usdt": 206.45680000000002,
+      "fee_usdt": 0.11355124000000001
+    },
+    {
+      "timestamp_ms": 1786642325427,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1876.71,
+      "qty": 0.11,
+      "notional_usdt": 206.4381,
+      "fee_usdt": 0.113540955
+    },
+    {
+      "timestamp_ms": 1786642926969,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1878.16,
+      "qty": 0.11,
+      "notional_usdt": 206.5976,
+      "fee_usdt": 0.11362868000000001
+    },
+    {
+      "timestamp_ms": 1786643228033,
+      "fib_level": 3,
+      "kind": "fibonacci",
+      "price": 1879.42,
+      "qty": 0.22,
+      "notional_usdt": 413.4724,
+      "fee_usdt": 0.22740982
+    },
+    {
+      "timestamp_ms": 1786643529057,
+      "fib_level": 2,
+      "kind": "fibonacci",
+      "price": 1877.65,
+      "qty": 0.11,
+      "notional_usdt": 206.5415,
+      "fee_usdt": 0.11359782500000001
+    },
+    {
+      "timestamp_ms": 1786644431094,
+      "fib_level": 3,
+      "kind": "fibonacci",
+      "price": 1879.14,
+      "qty": 0.22,
+      "notional_usdt": 413.41080000000005,
+      "fee_usdt": 0.22737594000000005
+    }
+  ],
+  "performance_summary": {
+    "completed_cycles": 23,
+    "total_orders_executed": 197,
+    "avg_orders_per_cycle": 8.565217391304348,
+    "avg_net_profit_usdt": 7.271717110561686,
+    "max_drawdown_usdt": 0.8547160548351442,
+    "max_fibonacci_level": 4,
+    "avg_cycle_duration_sec": -310689786.1937391,
+    "total_fees_usdt": 56.17997565,
+    "total_funding_usdt": 18.57466916771693,
+    "cumulative_net_pnl_usdt": 167.24949354291877
+  },
+  "recent_cycles": [
+    {
+      "cycle_id": 1,
+      "start_ts_ms": 1786365782892,
+      "end_ts_ms": 1786366329300,
+      "duration_sec": 546.408,
+      "orders_count": 4,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 0.05484150440500264,
+      "total_fees_usdt": 0.06306503499999999,
+      "total_funding_usdt": 0.0008065394049999999
+    },
+    {
+      "cycle_id": 2,
+      "start_ts_ms": 1786366333455,
+      "end_ts_ms": 1786366567585,
+      "duration_sec": 234.13,
+      "orders_count": 3,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 0.008216681869993265,
+      "total_fees_usdt": 0.041980565000000004,
+      "total_funding_usdt": 0.00029724686999999997
+    },
+    {
+      "cycle_id": 3,
+      "start_ts_ms": 1786366571696,
+      "end_ts_ms": 1786366779289,
+      "duration_sec": 207.593,
+      "orders_count": 2,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 0.005606275321001092,
+      "total_fees_usdt": 0.020963965,
+      "total_funding_usdt": 0.000270240321
+    },
+    {
+      "cycle_id": 4,
+      "start_ts_ms": 1786369268453,
+      "end_ts_ms": 1786369788181,
+      "duration_sec": 519.728,
+      "orders_count": 10,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 1.736282307080221,
+      "total_fees_usdt": 1.878822,
+      "total_funding_usdt": 0.03310430708
+    },
+    {
+      "cycle_id": 5,
+      "start_ts_ms": 1786369792378,
+      "end_ts_ms": 1786370011273,
+      "duration_sec": 218.895,
+      "orders_count": 6,
+      "max_fib_level": 2,
+      "net_pnl_usdt": 0.3113145498319138,
+      "total_fees_usdt": 1.1470806050000002,
+      "total_funding_usdt": 0.016295154832
+    },
+    {
+      "cycle_id": 6,
+      "start_ts_ms": 1786370015329,
+      "end_ts_ms": 1786373292507,
+      "duration_sec": 3277.178,
+      "orders_count": 57,
+      "max_fib_level": 2,
+      "net_pnl_usdt": 4.193948735118198,
+      "total_fees_usdt": 12.855885185000002,
+      "total_funding_usdt": 2.1723339201189997
+    },
+    {
+      "cycle_id": 7,
+      "start_ts_ms": 1786373296522,
+      "end_ts_ms": 1786373623859,
+      "duration_sec": 327.337,
+      "orders_count": 7,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 0.5112534581158386,
+      "total_fees_usdt": 1.5000981599999998,
+      "total_funding_usdt": 0.033751618116
+    },
+    {
+      "cycle_id": 8,
+      "start_ts_ms": 1786373627855,
+      "end_ts_ms": 1786374039267,
+      "duration_sec": 411.412,
+      "orders_count": 9,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 2.749698740675808,
+      "total_fees_usdt": 1.996203,
+      "total_funding_usdt": 0.034701740676
+    },
+    {
+      "cycle_id": 9,
+      "start_ts_ms": 1786374043341,
+      "end_ts_ms": 1786374751934,
+      "duration_sec": 708.593,
+      "orders_count": 14,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 2.550626816803103,
+      "total_fees_usdt": 3.5099135500000003,
+      "total_funding_usdt": 0.194940366803
+    },
+    {
+      "cycle_id": 10,
+      "start_ts_ms": 1786374755982,
+      "end_ts_ms": 1786374764970,
+      "duration_sec": 8.988,
+      "orders_count": 2,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 0.08764070000003821,
+      "total_fees_usdt": 0.29035930000000004,
+      "total_funding_usdt": 0
+    },
+    {
+      "cycle_id": 11,
+      "start_ts_ms": 1786374768962,
+      "end_ts_ms": 1786374778167,
+      "duration_sec": 9.205,
+      "orders_count": 3,
+      "max_fib_level": 1,
+      "net_pnl_usdt": -0.09047136000002676,
+      "total_fees_usdt": 0.43487136000000004,
+      "total_funding_usdt": 0
+    },
+    {
+      "cycle_id": 12,
+      "start_ts_ms": 1786374782152,
+      "end_ts_ms": 1786374784269,
+      "duration_sec": 2.117,
+      "orders_count": 2,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 0.10983795000002733,
+      "total_fees_usdt": 0.31016204999999997,
+      "total_funding_usdt": 0
+    },
+    {
+      "cycle_id": 13,
+      "start_ts_ms": 1786374788258,
+      "end_ts_ms": 1786374792670,
+      "duration_sec": 4.412,
+      "orders_count": 2,
+      "max_fib_level": 1,
+      "net_pnl_usdt": -0.17056319999996367,
+      "total_fees_usdt": 0.33056320000000006,
+      "total_funding_usdt": 0
+    },
+    {
+      "cycle_id": 14,
+      "start_ts_ms": 1786374796659,
+      "end_ts_ms": 1786374807860,
+      "duration_sec": 11.201,
+      "orders_count": 2,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 0.10467019000001077,
+      "total_fees_usdt": 0.35092981000000006,
+      "total_funding_usdt": 0
+    },
+    {
+      "cycle_id": 15,
+      "start_ts_ms": 1786374811856,
+      "end_ts_ms": 1786375165711,
+      "duration_sec": 353.855,
+      "orders_count": 8,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 0.5436869652000103,
+      "total_fees_usdt": 2.60052111,
+      "total_funding_usdt": 0.0500080752
+    },
+    {
+      "cycle_id": 16,
+      "start_ts_ms": 1786375169860,
+      "end_ts_ms": 1786375498706,
+      "duration_sec": 328.846,
+      "orders_count": 8,
+      "max_fib_level": 1,
+      "net_pnl_usdt": -0.5810415548353247,
+      "total_fees_usdt": 2.54760759,
+      "total_funding_usdt": 0.041866035165
+    },
+    {
+      "cycle_id": 17,
+      "start_ts_ms": 1786375502697,
+      "end_ts_ms": 1786375559686,
+      "duration_sec": 56.989,
+      "orders_count": 3,
+      "max_fib_level": 1,
+      "net_pnl_usdt": -0.2736744999998182,
+      "total_fees_usdt": 0.8236745000000001,
+      "total_funding_usdt": 0
+    },
+    {
+      "cycle_id": 18,
+      "start_ts_ms": 1786377362418,
+      "end_ts_ms": 2,
+      "duration_sec": -1786377362.416,
+      "orders_count": 2,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 1.765602325000133,
+      "total_fees_usdt": 2.7430976750000005,
+      "total_funding_usdt": 0
+    },
+    {
+      "cycle_id": 19,
+      "start_ts_ms": 1786377397789,
+      "end_ts_ms": 1786377613263,
+      "duration_sec": 215.474,
+      "orders_count": 5,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 7.897311249931573,
+      "total_fees_usdt": 6.88662986,
+      "total_funding_usdt": 0.4077410847309311
+    },
+    {
+      "cycle_id": 20,
+      "start_ts_ms": 1786459634472,
+      "end_ts_ms": 2,
+      "duration_sec": -1786459634.47,
+      "orders_count": 2,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 1.765602325000133,
+      "total_fees_usdt": 2.7430976750000005,
+      "total_funding_usdt": 0
+    },
+    {
+      "cycle_id": 21,
+      "start_ts_ms": 1786526583248,
+      "end_ts_ms": 2,
+      "duration_sec": -1786526583.246,
+      "orders_count": 2,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 1.765602325000133,
+      "total_fees_usdt": 2.7430976750000005,
+      "total_funding_usdt": 0
+    },
+    {
+      "cycle_id": 22,
+      "start_ts_ms": 1786527467862,
+      "end_ts_ms": 2,
+      "duration_sec": -1786527467.86,
+      "orders_count": 2,
+      "max_fib_level": 1,
+      "net_pnl_usdt": 1.765602325000133,
+      "total_fees_usdt": 2.7430976750000005,
+      "total_funding_usdt": 0
+    },
+    {
+      "cycle_id": 23,
+      "start_ts_ms": 1786620637394,
+      "end_ts_ms": 1786639160569,
+      "duration_sec": 18523.175,
+      "orders_count": 42,
+      "max_fib_level": 4,
+      "net_pnl_usdt": 140.43789873340063,
+      "total_fees_usdt": 7.618254105,
+      "total_funding_usdt": 15.588552838399
+    }
+  ]
+}
