@@ -101,6 +101,7 @@ import logging
 import math
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List
 
 from analytics import AnalyticsEngine, CycleRecord, OrderRecord
@@ -119,10 +120,11 @@ from strategy import (
 
 logger = logging.getLogger("eth_grid_bot.main")
 
-BOT_VERSION = "1.1"
+BOT_VERSION = "1.2"
 CONFIG_PATH = "config.json"
 CANDLE_CLOSE_OFFSET_SEC = 1.0  # evaluate the grid 1s after each timeframe boundary
 RSI_POLL_INTERVAL_SEC = 15.0  # how often the tick loop re-checks for a newly-closed RSI candle
+STOP_SIGNAL_PATH = Path("STOP")  # touch this file (same dir as main.py) for a clean remote shutdown
 
 
 def parse_timeframe_seconds(timeframe: str) -> int:
@@ -783,12 +785,26 @@ class GridBotOrchestrator:
     # -- helpers -----------------------------------------------------------
 
     async def _wait_or_stop(self, timeout_sec: float) -> bool:
-        """Sleeps up to `timeout_sec`, returning True early if a shutdown was requested."""
+        """Sleeps up to `timeout_sec`, returning True early if a shutdown was requested.
+        Also polls for STOP_SIGNAL_PATH (see module docstring / STOP_SIGNAL_PATH) so the
+        bot can be stopped cleanly from any shell in this directory -- no PID hunting,
+        no terminal reattachment -- on both Windows and Termux, e.g. `touch STOP`."""
+        self._check_stop_file()
         try:
             await asyncio.wait_for(self._stop_event.wait(), timeout=timeout_sec)
             return True
         except asyncio.TimeoutError:
             return False
+
+    def _check_stop_file(self) -> None:
+        if not STOP_SIGNAL_PATH.exists():
+            return
+        try:
+            STOP_SIGNAL_PATH.unlink()
+        except OSError:
+            pass
+        logger.info("Stop-file '%s' rilevato: arresto pulito richiesto.", STOP_SIGNAL_PATH)
+        self._stop_event.set()
 
 
 async def _run() -> None:
