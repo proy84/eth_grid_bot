@@ -7,37 +7,39 @@ exchange I/O lives in `exchange.py`, orchestration and scheduling in
 `main.py`, fee/PnL math in `fees.py`, and persistence in `analytics.py` /
 `data_exporter.py`.
 
-Design notes (interpretation of the dynamic percentage-grid spec):
-  - There is no fixed price list anymore. `grid_step_pct` (config.json,
-    e.g. 0.5 for 0.5%) defines a GEOMETRIC step: relative to a live anchor
-    price B ("Range 0"), level N sits at `Level_N = B * (1 + step)^N` for
-    any integer N (positive above B, negative below). `RangeGrid.base_price`
-    IS that anchor -- there is no separate index into anything.
-  - The anchor is set directly from the live market price by the caller
-    (`main.py`): at startup, and again every time a new cycle starts after
-    a Take Profit. Setting the anchor is NOT the same operation as
-    classifying a candle close against an existing grid -- it simply
-    declares "this price is Range 0" outright, by assignment
-    (`RangeGrid.base_price = current_price`), with no boundary rule
-    involved.
-  - Ongoing classification (`RangeGrid.classify_offset`) maps a later
-    candle-close price to an integer offset from the anchor: offset 0 means
-    "still inside the first band above/at Range 0", offset 1 means one
-    0.5% step higher, etc. It mirrors the old fixed-array rule 5 exactly
-    (a price sitting precisely on a level boundary is assigned to the LOWER
-    band), computed continuously via logarithms instead of a boundary
-    array lookup.
+Design notes (fixed price ladder, floating Range-0 label re-indexed to Break-Even):
+  - The price QUOTES never change. `grid_step_pct` (config.json, e.g. 0.5
+    for 0.5%) defines a GEOMETRIC step: relative to the anchor price B set
+    ONCE at the cycle's very first fill, ABSOLUTE level N sits at
+    `AbsoluteLevel_N = B * (1 + step)^N` for any integer N -- and that exact
+    price never moves for the rest of the cycle. `RangeGrid.base_price` IS
+    that anchor, mutated only by `full_reset` (cycle boundaries).
+  - What DOES move is which absolute level is currently LABELED "Range 0":
+    `RangeGrid.zero_index`. `RangeGrid.reindex_to_breakeven` re-points it to
+    wherever the position's Break-Even (LORDO, `PositionManager.avg_entry_price`)
+    currently falls, every time a new fill updates Break-Even -- WITHOUT
+    touching `base_price` or any level's price. This only changes which
+    label ("Range 0", "Range +1", "Range -2", ...) an existing, unchanged
+    price quote currently wears -- a pure re-indexing, not a recalculation.
+  - `RangeGrid.classify_offset` and `RangeGrid.level_price` both work in
+    this LABELED (zero_index-relative) space, so every other piece of logic
+    in the codebase (Fibonacci sizing, Neutral Zone, RSI gap/catch-up,
+    dashboard export) is written purely in terms of "offset from Range 0"
+    and needs no awareness that Range 0 itself is following Break-Even --
+    they just see it happen. `zero_index` resets to 0 on `full_reset` too
+    (a fresh cycle's first fill IS its Range 0, by definition).
   - Grid evaluation fires EXACTLY ONE order on every single candle close,
     with no "idle" outcome and no once-per-level de-duplication: the order
-    size is always Fibonacci(offset + 1) * BASE_NOTIONAL_USDT, where
-    `offset` is the distance (in 0.5% steps) between the candle's closing
-    price and the current anchor -- 0 while price sits in Range 0 itself, 1
-    one step up, 2 two steps up, etc. This holds whether price stayed put,
-    advanced, or came right back to a level it already visited: every
-    candle close is a fresh accumulation at whatever level price currently
-    sits at. If price closes BELOW Range 0 (negative offset), the anchor
-    shifts down to that level and the order size resets to Fibonacci(1)
-    (the base quota).
+    size is always `Fibonacci(|offset| + 1) * BASE_NOTIONAL_USDT`, where
+    `offset` is the SIGNED, LABELED distance (in 0.5% steps) between the
+    candle's closing price and the CURRENT Range 0 -- 0 while price sits in
+    Range 0 itself, 1 one step up, -1 one step down, etc., symmetric in
+    both directions.
+  - Break-Even (the position's fee-adjusted average entry) is computed in
+    `fees.py` / `PositionManager`, entirely independently of the grid math
+    -- the grid only reads it (via `reindex_to_breakeven`) after each fill.
+    It is also used, separately, for the trailing-stop activation/trail
+    calculation in `main.py`.
   - Grid evaluation must be invoked ONLY on candle close (rule 2) --
     enforced by the caller (main.py), not by this module.
 """
@@ -100,7 +102,8 @@ class StrategyConfig:
     margin_mode: str
     grid_step_pct: float
     base_notional_usdt: float
-    take_profit_net_breakeven_pct: float
+    trailing_activation_pct: float
+    trailing_distance_pct: float
     taker_rate: float
     maker_rate: float
     auto_compound_enabled: bool
@@ -137,7 +140,8 @@ class StrategyConfig:
             margin_mode=raw["margin_mode"],
             grid_step_pct=float(os.environ.get("GRID_STEP_PERCENT") or raw["grid_step_pct"]) / 100.0,
             base_notional_usdt=float(raw["base_notional_usdt"]),
-            take_profit_net_breakeven_pct=float(raw["take_profit"]["net_breakeven_pct"]),
+            trailing_activation_pct=float(raw["trailing_stop"]["activation_pct"]),
+            trailing_distance_pct=float(raw["trailing_stop"]["distance_pct"]),
             taker_rate=float(raw["fees"]["taker_rate"]),
             maker_rate=float(raw["fees"].get("maker_rate", 0.0)),
             auto_compound_enabled=bool(raw["auto_compound"]["enabled"]),
@@ -171,34 +175,48 @@ class StrategyConfig:
 
 @dataclass
 class PlannedOrder:
-    level_index: int
-    range_offset: int
+    range_offset: int  # signed: can be negative (below anchor), 0, or positive (above anchor)
     fib_n: int
     notional_usdt: float
-    kind: str  # "fibonacci" (offset >= 0, includes staying in Range 0) | "range_shift_base"
+    kind: str  # always "fibonacci" -- every mediation order, up or down, is sized the same way
 
 
 @dataclass
 class RangeGrid:
-    """Dynamic geometric grid: `Level_N = base_price * (1 + step_pct) ** N`
-    for any integer N. No fixed price list -- `base_price` (the "Range 0"
-    anchor) and `step_pct` (e.g. 0.005 for 0.5%) fully define every level."""
+    """Geometric price ladder, `AbsoluteLevel_N = base_price * (1 + step_pct) ** N`
+    for any integer N, PLUS a floating re-indexing point `zero_index`.
+
+    The price QUOTES are immutable for the whole cycle: `base_price` is set
+    ONCE, via `full_reset`, and never mutated again until the next cycle --
+    there is no method here that changes it any other way, so every
+    absolute level's exact price never moves.
+
+    What DOES move is which absolute level is currently LABELED "Range 0":
+    `zero_index` (an absolute level number, starting at 0 -- the anchor
+    itself). `reindex_to_breakeven` re-points it to wherever the position's
+    Break-Even currently falls, WITHOUT touching `base_price` or any level's
+    price -- it only changes which existing label ("Range 0", "Range +1", ...)
+    a given absolute level currently wears. `classify_offset` and
+    `level_price` both work in this LABELED (zero_index-relative) space, so
+    every other caller in the codebase (Fibonacci sizing, Neutral Zone, RSI
+    gap/catch-up, dashboard export) keeps working unchanged -- they just see
+    Range 0 "follow" Break-Even automatically."""
     base_price: float
     step_pct: float
+    zero_index: int = 0
 
     def level_price(self, offset: int) -> float:
-        return self.base_price * (1.0 + self.step_pct) ** offset
+        """Price of the level currently LABELED `offset` (relative to the
+        current Range 0, i.e. `zero_index`)."""
+        return self.base_price * (1.0 + self.step_pct) ** (self.zero_index + offset)
 
-    def classify_offset(self, price: float) -> int:
-        """Integer offset N such that price falls in (Level_N, Level_{N+1}]
-        (a price exactly on a level boundary is assigned to the LOWER
-        offset, mirroring rule 5). Computed via logarithms since levels are
-        generated on the fly rather than looked up in a fixed array.
-
-        NOTE: this is deliberately NOT used to anchor `base_price` itself --
-        anchoring is a direct assignment (see `full_reset`/callers in
-        main.py), not a classification of the anchor price against itself.
-        """
+    def _absolute_offset(self, price: float) -> int:
+        """Integer ABSOLUTE level N (relative to the fixed `base_price`
+        anchor, ignoring `zero_index`) such that price falls in
+        `(AbsoluteLevel_N, AbsoluteLevel_{N+1}]` (a price exactly on a level
+        boundary is assigned to the LOWER level, mirroring rule 5). This is
+        the one true coordinate system -- price quotes are computed from
+        this and `zero_index` never enters into it."""
         ratio = price / self.base_price
         raw = math.log(ratio) / math.log1p(self.step_pct)
         rounded = round(raw)
@@ -206,14 +224,40 @@ class RangeGrid:
             raw = float(rounded)
         return math.ceil(raw) - 1
 
-    def shift_base_down(self, new_offset: int) -> None:
-        """Range Shift (rule 7): move Range 0 down to `Level_{new_offset}`."""
-        self.base_price = self.level_price(new_offset)
+    def classify_offset(self, price: float) -> int:
+        """LABELED offset from the current Range 0: `absolute_offset(price)
+        - zero_index`. Unbounded in either direction -- N can be negative.
+
+        NOTE: this is deliberately NOT used to anchor `base_price` itself --
+        anchoring is a direct assignment (see `full_reset`/callers in
+        main.py), not a classification of the anchor price against itself.
+        """
+        return self._absolute_offset(price) - self.zero_index
 
     def full_reset(self, new_base_price: float) -> None:
-        """Post take-profit reset (rule 13): anchor a fresh Range 0 directly
-        at the given price (typically the live market price)."""
+        """Anchor a fresh Range 0 directly at the given price (the cycle's
+        first fill) AND reset the re-indexing point back to 0. Called
+        exactly once per cycle -- at bot startup / position bootstrap, and
+        again after a trailing-stop close -- and NEVER in between."""
         self.base_price = new_base_price
+        self.zero_index = 0
+
+    def reindex_to_breakeven(self, breakeven_price: float) -> bool:
+        """Re-labels Range 0 to wherever `breakeven_price` currently falls,
+        in absolute-level terms -- the price ladder itself is untouched.
+        Returns True if this actually moved `zero_index` (a real re-index),
+        False if Break-Even is still inside the level already labeled
+        Range 0 (nothing to do). Callers should skip invoking this for a
+        cycle's very first fill: at that instant Break-Even trivially
+        equals the just-set anchor price, which (per the boundary rule
+        above) classifies one level BELOW itself -- invoking this here
+        would spuriously re-index Range 0 to -1 before the cycle has even
+        started."""
+        new_zero_index = self._absolute_offset(breakeven_price)
+        if new_zero_index == self.zero_index:
+            return False
+        self.zero_index = new_zero_index
+        return True
 
 
 def compute_rsi(closes: List[float], period: int) -> Optional[float]:
@@ -242,38 +286,48 @@ def compute_rsi(closes: List[float], period: int) -> Optional[float]:
 
 
 def evaluate_grid_close(price: float, grid: RangeGrid, base_notional_usdt: float,
-                         max_fib_level: Optional[int]) -> PlannedOrder:
+                         max_fib_level: Optional[int],
+                         breakeven_price: Optional[float] = None) -> PlannedOrder:
     """Grid evaluation, run on EVERY candle close of the configured timeframe
     (rule 2). Always returns exactly one order -- the bot never sits idle just
     because price stayed inside the same range as last candle. The CALLER must
     guarantee this only runs on candle close; this function itself is
-    stateless with respect to time.
+    stateless with respect to time AND never mutates `grid` -- the anchor is
+    fixed for the whole cycle (see `RangeGrid`), so this is pure classification.
 
-    - price closes BELOW Range 0 (negative offset) -> Range 0 shifts down to
-      that level, order size is the base quota (Fibonacci(1) * BASE_NOTIONAL_USDT).
-    - price closes AT OR ABOVE Range 0 (offset >= 0) -> order size is
-      Fibonacci(offset + 1) * BASE_NOTIONAL_USDT, where offset = how many
-      `grid_step_pct` steps above Range 0 the close price currently sits (0
-      while still in Range 0 itself). This applies identically whether price
-      held its ground, advanced, or returned to a level visited before.
+    Sizing depends on `price` vs `breakeven_price` (the position's Break-Even
+    LORDO, i.e. `PositionManager.avg_entry_price` -- NOT the anchor/Range 0,
+    which may itself be re-indexed to Break-Even but is a discrete band while
+    this is a direct price comparison):
+      - `price < breakeven_price` (SHORT currently in PROFIT): always the
+        FIXED base quota, `BASE_NOTIONAL_USDT`, fib_n=1 -- no Fibonacci
+        multiplier, regardless of how far below or which offset it lands in.
+        Re-entering while already profitable shouldn't escalate size.
+      - `price >= breakeven_price` (SHORT currently at a loss, recovering)
+        -- or `breakeven_price is None` (no position yet, e.g. the very
+        first order of a cycle, though that path bypasses this function
+        entirely in `main.py`) -- the usual progression applies:
+        `Fibonacci(|offset| + 1) * BASE_NOTIONAL_USDT`, symmetric whether
+        `offset` (the signed distance in `grid_step_pct` steps from the
+        fixed anchor) is positive, negative, or zero.
 
     `max_fib_level=None` disables the safety cap entirely (stress-test mode):
-    the Fibonacci level grows without bound as offset increases.
+    the Fibonacci level grows without bound as |offset| increases. The cap
+    is irrelevant to the fixed-quota (profit-zone) branch, since that is
+    always fib_n=1.
     """
     offset = grid.classify_offset(price)
 
-    if offset < 0:
-        grid.shift_base_down(offset)
-        return PlannedOrder(level_index=offset, range_offset=0, fib_n=1,
-                             notional_usdt=fibonacci(1) * base_notional_usdt, kind="range_shift_base")
+    if breakeven_price is not None and price < breakeven_price:
+        return PlannedOrder(range_offset=offset, fib_n=1, notional_usdt=base_notional_usdt, kind="fibonacci")
 
-    n = offset + 1
+    n = abs(offset) + 1
     if max_fib_level is not None and n > max_fib_level:
         logger.warning("Fib level %d (range offset %d) exceeds max_fib_level=%d; capping at %d.",
                         n, offset, max_fib_level, max_fib_level)
         n = max_fib_level
     notional = fibonacci(n) * base_notional_usdt
-    return PlannedOrder(level_index=offset, range_offset=offset, fib_n=n, notional_usdt=notional, kind="fibonacci")
+    return PlannedOrder(range_offset=offset, fib_n=n, notional_usdt=notional, kind="fibonacci")
 
 
 # --------------------------------------------------------------------------- #

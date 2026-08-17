@@ -6,19 +6,33 @@ Orchestrator for the Only-Short grid bot. Wires together `exchange.py`
 break-even math), `analytics.py` (cycle history) and `data_exporter.py`
 (dashboard state).
 
+GRID IS STATIC FOR THE WHOLE CYCLE: `self.grid` (a `RangeGrid`) is anchored
+ONCE, via `RangeGrid.full_reset()`, at the cycle's very first fill -- at bot
+startup / position bootstrap (`_bootstrap_position`), and again exactly once
+after each trailing-stop close (`_reset_state_after_close`). Between those
+two moments `grid.base_price` NEVER changes: no downside re-anchoring, no
+RSI-catch-up re-anchoring, nothing. Every subsequent order, at any offset
+(positive above the anchor, negative below), is priced purely by
+classifying the current price against that one fixed anchor (see
+`strategy.evaluate_grid_close`). Break-Even (`PositionManager.avg_entry_price`
+/ `fees.compute_breakeven_prices`) is tracked completely separately and
+updates with every fill regardless of the grid -- it feeds only the
+trailing-stop calculation below, never the grid's levels.
+
 Two independent loops:
   - Grid scheduler: in normal (production) mode, wakes up once per
     `config.timeframe` interval, 1 second after the boundary (e.g. "5m" ->
     XX:05:01, XX:10:01 UTC; "1h" -> HH:00:01 UTC), fetches the just-CLOSED
-    candle and ALWAYS executes one grid order sized off the current range's
-    distance from Range 0 -- there is no "idle" outcome, even if price
-    stayed exactly where it was last candle. In `stress_test.enabled` mode
-    (see below) this scheduler is replaced entirely by a variable-interval,
-    tick-driven one.
+    candle and ALWAYS executes one grid order sized off the current price's
+    (signed) distance from the fixed anchor -- there is no "idle" outcome,
+    even if price stayed exactly where it was last candle. In
+    `stress_test.enabled` mode (see below) this scheduler is replaced
+    entirely by a variable-interval, tick-driven one.
   - Tick loop (every `tick_poll_interval_sec`, default 2s): recomputes real
-    net PnL, checks the fixed take-profit target, exports live state for
+    net PnL, drives the SHORT-only trailing stop, exports live state for
     the frontend, and (stress-test mode only) checks whether the position's
-    average entry price has caught up to the market's current grid band.
+    average entry price has caught up to the market's current grid band
+    (to decide the RSI tick-mode cadence -- never to move the grid).
 
 STRESS TEST MODE (`config.stress_test.enabled`): a deliberate, reversible
 override of the production scheduling model for high-frequency demo
@@ -35,44 +49,49 @@ testing. Three changes apply only while enabled:
   3. RSI trigger (`_maybe_update_rsi` / `_maybe_handle_rsi_tick_mode`): an
      RSI(`rsi_period`) reading on `rsi_timeframe` crossing UP through
      `rsi_overbought_threshold` (a fresh crossing from below -- staying
-     overbought does not re-trigger it) switches on tick-mode execution on
-     the CURRENT range. Grid orders at that cadence pull the position's
-     average entry price (break-even) up with every fill; once break-even
-     catches up to the live market's grid band, tick mode turns off
-     immediately, Range 0 re-anchors there mid-cycle (no Take Profit
-     needed), and the base cadence resumes -- a fresh RSI crossing is
-     required to re-arm it.
+     overbought does not re-trigger it) switches on tick-mode execution at
+     whatever offset price currently sits at, relative to the fixed anchor.
+     Grid orders at that cadence pull the position's average entry price
+     (break-even) with every fill; once break-even catches up to the live
+     market's grid band, tick mode turns off and the base cadence resumes
+     -- the grid's anchor itself is NEVER touched, only the cadence. A
+     fresh RSI crossing is required to re-arm it.
 Disabling `stress_test.enabled` restores the exact production behavior
 (fixed timeframe, candle-close evaluation, capped Fibonacci level, no RSI
 trigger) with no other code path affected.
 
-Exit is a FIXED take profit, not a trailing stop: the position closes at
-market the instant `mark_price` crosses `take_profit.net_breakeven_pct`%
-below the current Break-Even NETTO price (see `fees.compute_breakeven_prices`
--- already fee/funding-adjusted). No retracement wait, no peak tracking:
-this avoids giving back gains while waiting to confirm a peak, which is what
-a trailing stop's callback window does. `net_breakeven_pct` is a real PRICE
-percentage, not a leveraged-margin percentage.
+Exit is a SHORT-only TRAILING stop (`_maybe_handle_trailing_stop`), not a
+fixed take profit: it is NOT active at position entry. It arms the instant
+`mark_price` first drops to `trailing_stop.activation_pct`% below the
+current Break-Even NETTO price (see `fees.compute_breakeven_prices` --
+already fee/funding-adjusted), pinning the initial stop
+`trailing_stop.distance_pct`% ABOVE that arming price. From then on, every
+tick that makes a NEW LOW pulls the stop down with it (still
+`distance_pct`% above the lowest mark_price seen since arming) -- the stop
+never retraces upward on a bounce. The position closes at market the
+instant `mark_price` rises back up to touch or cross the stop. Both
+percentages are real PRICE percentages, not leveraged-margin percentages.
 
-Grid-triggered entries and take-profit-triggered closes both mutate the
+Grid-triggered entries and trailing-stop-triggered closes both mutate the
 same position state, and each involves at least one `await` (an exchange
 call) -- without protection, a grid evaluation firing in the same instant as
-a take-profit close could interleave and corrupt the PnL bookkeeping (the
+a trailing-stop close could interleave and corrupt the PnL bookkeeping (the
 close would execute against the exchange's real, up-to-date position while
 our recorded gross/fees were snapshotted from a stale, smaller position).
 `self._position_lock` (asyncio.Lock) serializes every position mutation --
-`_execute_planned_order` and the close+record portion of `_take_profit` --
+`_execute_planned_order` and the close+record portion of `_close_cycle` --
 so the two flows can never interleave.
 
 Two situations bypass the candle-close wait and fire a market order
-immediately, per spec:
+immediately, per spec -- and both are the ONLY two moments the grid's
+anchor is ever set:
   1. Bot startup with no open position on the symbol -> immediate base
-     SHORT (Fibonacci(1) * BASE_NOTIONAL_USDT) at market, anchoring Range 0
-     to the current price.
-  2. A cycle closing via the take-profit target -> immediate re-open of the
-     new base SHORT at market in the new Range 0.
-Every subsequent order (staying in Range 0, advancing to Range +1/+2/...,
-or a downside Range Shift) is decided strictly on candle close.
+     SHORT (Fibonacci(1) * BASE_NOTIONAL_USDT) at market, anchoring the
+     grid to the current price for the whole cycle.
+  2. A cycle closing via the trailing stop -> immediate re-open of the new
+     base SHORT at market, anchoring a fresh grid for the new cycle.
+Every subsequent order (at any offset, positive or negative, relative to
+that one fixed anchor) is decided strictly on candle close.
 """
 
 from __future__ import annotations
@@ -157,12 +176,21 @@ class GridBotOrchestrator:
         # across candles does not re-trigger it, only a fresh crossing does.
         # It turns back off (and requires a fresh crossing to re-arm) once the
         # position's break-even price has caught up to the market's current
-        # grid band, or on any other base_price change (downside shift, TP
-        # reset).
+        # grid band, or whenever a new cycle starts (trailing-stop close).
+        # The grid's own anchor is never touched by this flag either way.
         self._current_rsi: float | None = None
         self._rsi_last_candle_ts: int | None = None
         self._last_rsi_poll_ts = 0.0
         self._rsi_tick_mode_active = False
+        # SHORT-only trailing stop. `_trailing_active` becomes True the
+        # instant mark_price first drops to trailing_activation_pct% below
+        # Break-Even NETTO (never at entry); `_trailing_lowest_price` then
+        # tracks the lowest mark_price seen since arming, and the stop is
+        # always trailing_distance_pct% above it -- monotonically
+        # non-increasing, never retraces upward on a bounce. Both reset on
+        # every cycle close (see `_reset_state_after_close`).
+        self._trailing_active = False
+        self._trailing_lowest_price: float | None = None
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -176,10 +204,10 @@ class GridBotOrchestrator:
                     self.cfg.timeframe, self.timeframe_sec)
         if self.cfg.stress_test_enabled:
             logger.warning(
-                "[stress-test] STRESS TEST MODE ENABLED: base cadence %.0fs for all ranges; RSI(%d) on %s >= %.1f "
-                "triggers tick mode (every %.0fs) until Break-Even catches up to the market's grid band; "
-                "Neutral Zone %s (%.2f%% around Break-Even LORDO, Fibonacci entries only -- Range Shifts always "
-                "proceed); Fibonacci cap %s. Set stress_test.enabled=false in config.json to return to "
+                "[stress-test] STRESS TEST MODE ENABLED: STATIC grid (anchored once per cycle, never re-anchors); "
+                "base cadence %.0fs for all ranges; RSI(%d) on %s >= %.1f triggers tick mode (every %.0fs) until "
+                "Break-Even catches up to the market's grid band; Neutral Zone %s (%.2f%% around Break-Even "
+                "LORDO); Fibonacci cap %s. Set stress_test.enabled=false in config.json to return to "
                 "production behavior.",
                 self.cfg.stress_test_base_interval_sec, self.cfg.stress_test_rsi_period,
                 self.cfg.stress_test_rsi_timeframe, self.cfg.stress_test_rsi_overbought_threshold,
@@ -236,7 +264,7 @@ class GridBotOrchestrator:
                               "the position stays flat until the next tick can retry implicitly.")
             return
 
-        order = PlannedOrder(level_index=0, range_offset=0, fib_n=1,
+        order = PlannedOrder(range_offset=0, fib_n=1,
                               notional_usdt=fibonacci(1) * self.base_notional_usdt, kind=kind)
         await self._execute_planned_order(order, mark_price, int(time.time() * 1000))
 
@@ -311,15 +339,9 @@ class GridBotOrchestrator:
 
         max_fib_level = None if (self.cfg.stress_test_enabled and self.cfg.stress_test_unlimited_fib_level) \
             else self.cfg.max_fib_level
-        order = evaluate_grid_close(price, self.grid, self.base_notional_usdt, max_fib_level)
-        if order.kind == "range_shift_base":
-            # base_price just moved to a new (lower) anchor -- any catch-up
-            # tracked against the OLD anchor is no longer meaningful. A fresh
-            # RSI crossing is required to re-arm tick mode. Range shifts are
-            # NEVER suspended by the Neutral Zone (see below) -- the grid must
-            # keep tracking price freely even while Fibonacci buys are paused.
-            self._rsi_tick_mode_active = False
-        elif self.cfg.stress_test_enabled and self.cfg.stress_test_neutral_zone_enabled:
+        breakeven_price = None if self.position.is_flat else self.position.avg_entry_price
+        order = evaluate_grid_close(price, self.grid, self.base_notional_usdt, max_fib_level, breakeven_price)
+        if self.cfg.stress_test_enabled and self.cfg.stress_test_neutral_zone_enabled:
             if self._maybe_suspend_for_neutral_zone(price):
                 return
         logger.info("Grid evaluation: close=%.4f base_price=%.4f offset=%d -> fib_n=%d (%s)",
@@ -328,16 +350,19 @@ class GridBotOrchestrator:
 
     def _maybe_suspend_for_neutral_zone(self, mark_price: float) -> bool:
         """Neutral Zone (stress-test only): pauses Fibonacci accumulation
-        entries -- never Range Shifts, see caller -- while the market price
-        sits within `stress_test_neutral_zone_percent`% of the Break-Even
-        LORDO (`avg_entry_price`; the Break-Even NETTO stays reserved for the
-        take-profit target). Buying more this close to break-even is just fee
-        churn with no strategic benefit. Bypassed unconditionally whenever the
-        current RSI(5m) reading is >= the overbought threshold -- a direct
-        check on the live RSI value, independent of whether tick mode is
-        presently active or already turned off after a catch-up -- so a
-        genuinely overbought market can still accumulate right through the
-        zone. Returns True if the caller should skip execution this round."""
+        entries -- above OR below the fixed anchor alike, there is no more
+        "Range Shift" special case now that the grid never re-anchors mid-
+        cycle -- while the market price sits within
+        `stress_test_neutral_zone_percent`% of the Break-Even LORDO
+        (`avg_entry_price`; the Break-Even NETTO stays reserved for the
+        trailing-stop calculation). Buying more this close to break-even is
+        just fee churn with no strategic benefit. Bypassed unconditionally
+        whenever the current RSI(5m) reading is >= the overbought threshold --
+        a direct check on the live RSI value, independent of whether tick
+        mode is presently active or already turned off after a catch-up --
+        so a genuinely overbought market can still accumulate right through
+        the zone. Returns True if the caller should skip execution this
+        round."""
         if self.position.is_flat:
             return False
         avg_entry = self.position.avg_entry_price
@@ -383,6 +408,7 @@ class GridBotOrchestrator:
                                   order.kind, order.fib_n, order.notional_usdt)
                 return
 
+            was_flat_before = self.position.is_flat
             fee = self.fee_engine.taker_fee_for_notional(filled.notional_usdt)
             self.position.add_entry(EntryFill(
                 price=filled.price, qty=filled.qty, notional_usdt=filled.notional_usdt,
@@ -394,6 +420,20 @@ class GridBotOrchestrator:
             ))
             logger.info("Grid order filled: kind=%s fib_n=%d qty=%.6f price=%.2f notional=%.2f fee=%.4f",
                         order.kind, order.fib_n, filled.qty, filled.price, filled.notional_usdt, fee)
+
+            # Re-index Range 0 to the freshly-updated Break-Even -- skipped
+            # for the cycle's very first fill (was_flat_before), since at
+            # that instant Break-Even trivially equals the just-set anchor,
+            # which would spuriously re-index to -1 (see RangeGrid.reindex_
+            # to_breakeven's docstring for why).
+            if not was_flat_before:
+                old_zero_index = self.grid.zero_index
+                if self.grid.reindex_to_breakeven(self.position.avg_entry_price):
+                    logger.info(
+                        "Range 0 RE-INDICIZZATO al Break-Even: avg_entry=%.4f -> zero_index %d -> %d "
+                        "(quote di prezzo invariate, base_price=%.4f).",
+                        self.position.avg_entry_price, old_zero_index, self.grid.zero_index, self.grid.base_price,
+                    )
 
     # -- tick loop: real-time net PnL + fixed take-profit target (rules 3, 8, 9) -
 
@@ -427,21 +467,64 @@ class GridBotOrchestrator:
         self._export_state(mark_price, breakdown, margin_used)
 
         if self.position.is_flat:
+            self._trailing_active = False
+            self._trailing_lowest_price = None
             return
 
-        target_price = self._take_profit_target_price()
-        if target_price is not None and mark_price <= target_price:
-            logger.info("Take profit target reached: mark=%.4f <= target=%.4f (%.2f%% below Break-Even NETTO)",
-                        mark_price, target_price, self.cfg.take_profit_net_breakeven_pct)
-            await self._take_profit(mark_price)
+        await self._maybe_handle_trailing_stop(mark_price)
 
-    def _take_profit_target_price(self) -> float | None:
-        """SHORT profits as price falls, so the target sits
-        `take_profit_net_breakeven_pct`% BELOW the net breakeven price."""
+    def _trailing_activation_price(self) -> float | None:
+        """SHORT profits as price falls, so the trailing stop arms the
+        instant mark_price first drops to `trailing_activation_pct`% BELOW
+        the net breakeven price -- never at entry."""
         _, be_net = compute_breakeven_prices(self.position.entries, self.fee_engine)
         if be_net <= 0:
             return None
-        return be_net * (1.0 - self.cfg.take_profit_net_breakeven_pct / 100.0)
+        return be_net * (1.0 - self.cfg.trailing_activation_pct / 100.0)
+
+    def _trailing_stop_price(self) -> float | None:
+        """Current stop level: `trailing_distance_pct`% above the lowest
+        mark_price seen since the trailing stop armed. None if not active."""
+        if not self._trailing_active or self._trailing_lowest_price is None:
+            return None
+        return self._trailing_lowest_price * (1.0 + self.cfg.trailing_distance_pct / 100.0)
+
+    async def _maybe_handle_trailing_stop(self, mark_price: float) -> None:
+        """SHORT-only trailing stop (replaces the old fixed take profit).
+
+        Not active at entry: arms the instant `mark_price` first drops to
+        `trailing_activation_pct`% below Break-Even NETTO, pinning the
+        initial stop `trailing_distance_pct`% ABOVE that arming price. From
+        then on, every new low pulls the stop down with it (still
+        `distance_pct`% above the lowest mark_price seen since arming) --
+        the stop is monotonically non-increasing and never retraces upward
+        on a bounce. Closes the whole position at market the instant
+        `mark_price` rises back up to touch or cross the stop."""
+        if not self._trailing_active:
+            activation_price = self._trailing_activation_price()
+            if activation_price is None or mark_price > activation_price:
+                return
+            self._trailing_active = True
+            self._trailing_lowest_price = mark_price
+            logger.info(
+                "Trailing Stop ATTIVATO: mark=%.4f <= soglia attivazione=%.4f (%.2f%% sotto Break-Even NETTO) "
+                "-> stop iniziale=%.4f (%.2f%% sopra il prezzo di attivazione).",
+                mark_price, activation_price, self.cfg.trailing_activation_pct,
+                self._trailing_stop_price(), self.cfg.trailing_distance_pct,
+            )
+            return
+
+        if mark_price < self._trailing_lowest_price:
+            self._trailing_lowest_price = mark_price
+            logger.info("Trailing Stop: nuovo minimo=%.4f -> stop aggiornato a %.4f.",
+                        mark_price, self._trailing_stop_price())
+            return
+
+        stop_price = self._trailing_stop_price()
+        if stop_price is not None and mark_price >= stop_price:
+            logger.info("Trailing Stop COLPITO: mark=%.4f >= stop=%.4f (minimo raggiunto dopo l'attivazione=%.4f).",
+                        mark_price, stop_price, self._trailing_lowest_price)
+            await self._close_cycle(mark_price)
 
     def _has_real_breakeven_gap(self, mark_price: float) -> bool:
         """True only if the market has genuinely pulled AHEAD of (above) the
@@ -526,13 +609,16 @@ class GridBotOrchestrator:
     async def _maybe_handle_rsi_tick_mode(self, mark_price: float) -> None:
         """Stress-test only, deactivation half of the RSI trigger. While tick
         mode is active, grid orders fire every `stress_test_tick_mode_interval_sec`
-        on the CURRENT range, which pulls the position's average entry price
-        (break-even) up with every fill. Once break-even has caught up to the
-        live market's grid band, there is nothing left to accelerate: turn
-        tick mode off immediately, re-anchor Range 0 right here (mid-cycle, no
-        Take Profit needed), and fall back to the base cadence. A fresh RSI
-        crossing is required to re-arm (see `_maybe_update_rsi`) -- this
-        method never turns tick mode back ON, only off."""
+        on the CURRENT band (relative to the cycle's fixed anchor), which
+        pulls the position's average entry price (break-even) with every
+        fill. Once break-even has caught up to the live market's grid band,
+        there is nothing left to accelerate: turn tick mode off and fall
+        back to the base cadence. The grid's anchor is NEVER touched here --
+        `RangeGrid.base_price` is fixed for the whole cycle (see
+        strategy.py's module docstring); this only ever changes the
+        scheduling cadence. A fresh RSI crossing is required to re-arm (see
+        `_maybe_update_rsi`) -- this method never turns tick mode back ON,
+        only off."""
         if not self._rsi_tick_mode_active:
             return
         if self.position.is_flat:
@@ -546,13 +632,11 @@ class GridBotOrchestrator:
         if mark_offset != breakeven_offset:
             return
 
-        old_base = self.grid.base_price
-        self.grid.full_reset(mark_price)
         self._rsi_tick_mode_active = False
         logger.info(
-            "Break-Even raggiunto: Tick Mode Disattivato -> Nuovo Range 0 (avg_entry=%.4f mark=%.4f, both in "
-            "offset band %d relative to old base_price=%.4f) -> base_price=%.4f, frequency back to %.0fs.",
-            avg_entry, mark_price, mark_offset, old_base, self.grid.base_price,
+            "Break-Even raggiunto: Tick Mode Disattivato (avg_entry=%.4f mark=%.4f, both in offset band %d "
+            "relative to fixed base_price=%.4f) -> frequency back to %.0fs. Griglia invariata.",
+            avg_entry, mark_price, mark_offset, self.grid.base_price,
             self.cfg.stress_test_base_interval_sec,
         )
 
@@ -576,15 +660,15 @@ class GridBotOrchestrator:
         logger.info("Funding recorded: rate=%.6f notional=%.2f cashflow=%.4f",
                     rate, self.position.total_notional, rate * self.position.total_notional)
 
-    # -- take profit / cycle reset (rule 13) ----------------------------------
+    # -- trailing stop / cycle reset -------------------------------------------
 
-    async def _take_profit(self, mark_price: float) -> None:
+    async def _close_cycle(self, mark_price: float) -> None:
         """Holds `_position_lock` through snapshot -> exchange close -> cycle
         recording -> state reset, so a concurrent grid evaluation can never add
         an entry the close's PnL calculation doesn't account for (the bug that
         previously made our recorded net_pnl diverge from Bybit's own realized
         P&L whenever a candle-close evaluation landed at the same instant as a
-        take-profit trigger). The immediate re-open happens AFTER the lock is
+        trailing-stop trigger). The immediate re-open happens AFTER the lock is
         released -- it goes through `_execute_planned_order`, which acquires
         the same lock itself, so it cannot be taken while still held here."""
         reset_ref_price: float | None = None
@@ -598,11 +682,11 @@ class GridBotOrchestrator:
             try:
                 filled = await self.exchange.close_position_market()
             except Exception:
-                logger.exception("Failed to close position at market on take-profit trigger")
+                logger.exception("Failed to close position at market on trailing-stop trigger")
                 return
 
             if filled is None:
-                logger.error("Take profit requested but no open position was found on the exchange; "
+                logger.error("Trailing stop triggered but no open position was found on the exchange; "
                              "resetting local state only.")
                 reset_ref_price = mark_price
             else:
@@ -629,16 +713,16 @@ class GridBotOrchestrator:
                     net_pnl_usdt=net_pnl,
                     base_notional_at_start_usdt=self.base_notional_usdt,
                 ))
-                logger.info("TAKE PROFIT: cycle=%d net_pnl=%.2f USDT (gross=%.2f fees=%.2f funding=%.2f)",
+                logger.info("TRAILING STOP: cycle=%d net_pnl=%.2f USDT (gross=%.2f fees=%.2f funding=%.2f)",
                             self.cycle_id, net_pnl, gross_pnl, total_fees, total_funding)
                 reset_ref_price = filled.price
 
-            self._reset_state_after_take_profit(reset_ref_price)
+            self._reset_state_after_close(reset_ref_price)
 
         logger.info("Reopening the new base SHORT immediately at market (no candle-close wait).")
         await self._execute_immediate_base_order(kind="range_zero_reset_immediate")
 
-    def _reset_state_after_take_profit(self, ref_price: float) -> None:
+    def _reset_state_after_close(self, ref_price: float) -> None:
         """Synchronous on purpose: called while `_position_lock` is held, so it
         must not `await` (that would yield control mid-reset to another
         coroutine waiting on the same lock -- fine for correctness since the
@@ -653,6 +737,8 @@ class GridBotOrchestrator:
 
         self.grid.full_reset(ref_price)
         self._rsi_tick_mode_active = False
+        self._trailing_active = False
+        self._trailing_lowest_price = None
 
         self.cycle_id += 1
         self.cycle_start_ts_ms = int(time.time() * 1000)
@@ -685,8 +771,12 @@ class GridBotOrchestrator:
             open_fees_usdt=breakdown.open_fees_usdt,
             estimated_close_fee_usdt=breakdown.estimated_close_fee_usdt,
             funding_cashflow_usdt=breakdown.funding_cashflow_usdt,
-            take_profit_target_price=self._take_profit_target_price(),
-            take_profit_net_breakeven_pct=self.cfg.take_profit_net_breakeven_pct,
+            trailing_stop_active=self._trailing_active,
+            trailing_activation_price=self._trailing_activation_price(),
+            trailing_lowest_price=self._trailing_lowest_price,
+            trailing_stop_price=self._trailing_stop_price(),
+            trailing_activation_pct=self.cfg.trailing_activation_pct,
+            trailing_distance_pct=self.cfg.trailing_distance_pct,
         )
         self.exporter.export(live, self.cycle_orders)
 

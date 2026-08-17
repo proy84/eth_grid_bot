@@ -46,8 +46,12 @@ class LiveState:
     estimated_close_fee_usdt: float
     funding_cashflow_usdt: float
 
-    take_profit_target_price: Optional[float]
-    take_profit_net_breakeven_pct: float
+    trailing_stop_active: bool
+    trailing_activation_price: Optional[float]
+    trailing_lowest_price: Optional[float]
+    trailing_stop_price: Optional[float]
+    trailing_activation_pct: float
+    trailing_distance_pct: float
 
 
 class DataExporter:

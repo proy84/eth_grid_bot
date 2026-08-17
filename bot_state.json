@@ -1,172 +1,95 @@
 {
   "live": {
-    "timestamp_ms": 1786644863067,
+    "timestamp_ms": 1786968472962,
     "symbol": "ETH/USDT:USDT",
     "timeframe": "1m",
     "cycle_id": 24,
-    "mark_price": 1878.56,
-    "avg_entry_price": 1875.4444444444446,
-    "breakeven_gross_price": 1875.4444444444446,
-    "breakeven_net_price": 1874.0632845710359,
-    "total_qty": 1.98,
-    "total_notional_usdt": 3713.38,
-    "margin_used_usdt": 37.1338,
-    "current_fib_level": 3,
-    "range_base_price": 1859.7711442786072,
-    "base_notional_usdt": 210.0,
-    "gross_pnl_usdt": -6.168799999999642,
-    "net_pnl_usdt": -8.908393472450644,
-    "net_pnl_pct_on_margin": -23.989986137833036,
-    "open_fees_usdt": 2.0423590000000003,
-    "estimated_close_fee_usdt": 2.0457518400000003,
-    "funding_cashflow_usdt": 1.348517367549,
-    "take_profit_target_price": 1855.3226517253254,
-    "take_profit_net_breakeven_pct": 1.0
+    "mark_price": 1901.94,
+    "avg_entry_price": 1903.8138775506122,
+    "breakeven_gross_price": 1903.8138775506122,
+    "breakeven_net_price": 1904.970615089863,
+    "total_qty": 0.49,
+    "total_notional_usdt": 932.8687999998,
+    "margin_used_usdt": 9.328687999998,
+    "current_fib_level": 1,
+    "range_base_price": 1903.30547619,
+    "base_notional_usdt": 20.0,
+    "gross_pnl_usdt": 0.9181999997999674,
+    "net_pnl_usdt": 1.4858181447997074,
+    "net_pnl_pct_on_margin": 15.92740742106528,
+    "open_fees_usdt": 0.073414275,
+    "estimated_close_fee_usdt": 0.5125728300000001,
+    "funding_cashflow_usdt": 1.15360524999974,
+    "trailing_stop_active": false,
+    "trailing_activation_price": 1885.9209089389644,
+    "trailing_lowest_price": null,
+    "trailing_stop_price": null,
+    "trailing_activation_pct": 1.0,
+    "trailing_distance_pct": 0.7
   },
   "current_cycle_orders": [
     {
-      "timestamp_ms": 1786639161122,
+      "timestamp_ms": 1786964650477,
       "fib_level": 1,
-      "kind": "range_zero_reset_immediate",
-      "price": 1868.42,
-      "qty": 0.11,
-      "notional_usdt": 205.52620000000002,
-      "fee_usdt": 0.11303941000000002
+      "kind": "fibonacci",
+      "price": 1905.81,
+      "qty": 0.01,
+      "notional_usdt": 19.0581,
+      "fee_usdt": 0.010481955000000001
     },
     {
-      "timestamp_ms": 1786639314445,
+      "timestamp_ms": 1786965133667,
       "fib_level": 1,
-      "kind": "range_shift_base",
-      "price": 1863.38,
-      "qty": 0.11,
-      "notional_usdt": 204.9718,
-      "fee_usdt": 0.11273449
+      "kind": "fibonacci",
+      "price": 1906.96,
+      "qty": 0.01,
+      "notional_usdt": 19.0696,
+      "fee_usdt": 0.01048828
     },
     {
-      "timestamp_ms": 1786639615519,
-      "fib_level": 2,
+      "timestamp_ms": 1786965194636,
+      "fib_level": 1,
       "kind": "fibonacci",
-      "price": 1871.06,
-      "qty": 0.11,
-      "notional_usdt": 205.8166,
-      "fee_usdt": 0.11319913000000001
+      "price": 1906.87,
+      "qty": 0.01,
+      "notional_usdt": 19.0687,
+      "fee_usdt": 0.010487785000000001
     },
     {
-      "timestamp_ms": 1786639916607,
-      "fib_level": 2,
+      "timestamp_ms": 1786965255500,
+      "fib_level": 1,
       "kind": "fibonacci",
-      "price": 1874.95,
-      "qty": 0.11,
-      "notional_usdt": 206.24450000000002,
-      "fee_usdt": 0.11343447500000002
+      "price": 1906.51,
+      "qty": 0.01,
+      "notional_usdt": 19.0651,
+      "fee_usdt": 0.010485805
     },
     {
-      "timestamp_ms": 1786640217682,
-      "fib_level": 2,
+      "timestamp_ms": 1786965437078,
+      "fib_level": 1,
       "kind": "fibonacci",
-      "price": 1873.8,
-      "qty": 0.11,
-      "notional_usdt": 206.118,
-      "fee_usdt": 0.1133649
+      "price": 1906.76,
+      "qty": 0.01,
+      "notional_usdt": 19.0676,
+      "fee_usdt": 0.01048718
     },
     {
-      "timestamp_ms": 1786640518750,
-      "fib_level": 2,
+      "timestamp_ms": 1786967247714,
+      "fib_level": 1,
       "kind": "fibonacci",
-      "price": 1874.23,
-      "qty": 0.11,
-      "notional_usdt": 206.1653,
-      "fee_usdt": 0.11339091500000001
+      "price": 1907.36,
+      "qty": 0.01,
+      "notional_usdt": 19.0736,
+      "fee_usdt": 0.01049048
     },
     {
-      "timestamp_ms": 1786640819790,
-      "fib_level": 2,
+      "timestamp_ms": 1786967308590,
+      "fib_level": 1,
       "kind": "fibonacci",
-      "price": 1875.9,
-      "qty": 0.11,
-      "notional_usdt": 206.34900000000002,
-      "fee_usdt": 0.11349195000000002
-    },
-    {
-      "timestamp_ms": 1786641121108,
-      "fib_level": 2,
-      "kind": "fibonacci",
-      "price": 1875.68,
-      "qty": 0.11,
-      "notional_usdt": 206.3248,
-      "fee_usdt": 0.11347864000000002
-    },
-    {
-      "timestamp_ms": 1786641422182,
-      "fib_level": 2,
-      "kind": "fibonacci",
-      "price": 1877.3,
-      "qty": 0.11,
-      "notional_usdt": 206.503,
-      "fee_usdt": 0.11357665
-    },
-    {
-      "timestamp_ms": 1786641723229,
-      "fib_level": 2,
-      "kind": "fibonacci",
-      "price": 1876.76,
-      "qty": 0.11,
-      "notional_usdt": 206.4436,
-      "fee_usdt": 0.11354398
-    },
-    {
-      "timestamp_ms": 1786642024342,
-      "fib_level": 2,
-      "kind": "fibonacci",
-      "price": 1876.88,
-      "qty": 0.11,
-      "notional_usdt": 206.45680000000002,
-      "fee_usdt": 0.11355124000000001
-    },
-    {
-      "timestamp_ms": 1786642325427,
-      "fib_level": 2,
-      "kind": "fibonacci",
-      "price": 1876.71,
-      "qty": 0.11,
-      "notional_usdt": 206.4381,
-      "fee_usdt": 0.113540955
-    },
-    {
-      "timestamp_ms": 1786642926969,
-      "fib_level": 2,
-      "kind": "fibonacci",
-      "price": 1878.16,
-      "qty": 0.11,
-      "notional_usdt": 206.5976,
-      "fee_usdt": 0.11362868000000001
-    },
-    {
-      "timestamp_ms": 1786643228033,
-      "fib_level": 3,
-      "kind": "fibonacci",
-      "price": 1879.42,
-      "qty": 0.22,
-      "notional_usdt": 413.4724,
-      "fee_usdt": 0.22740982
-    },
-    {
-      "timestamp_ms": 1786643529057,
-      "fib_level": 2,
-      "kind": "fibonacci",
-      "price": 1877.65,
-      "qty": 0.11,
-      "notional_usdt": 206.5415,
-      "fee_usdt": 0.11359782500000001
-    },
-    {
-      "timestamp_ms": 1786644431094,
-      "fib_level": 3,
-      "kind": "fibonacci",
-      "price": 1879.14,
-      "qty": 0.22,
-      "notional_usdt": 413.41080000000005,
-      "fee_usdt": 0.22737594000000005
+      "price": 1907.78,
+      "qty": 0.01,
+      "notional_usdt": 19.0778,
+      "fee_usdt": 0.01049279
     }
   ],
   "performance_summary": {

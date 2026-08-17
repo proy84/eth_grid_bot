@@ -21,7 +21,7 @@ from typing import List, Union
 class OrderRecord:
     timestamp_ms: int
     fib_level: int
-    kind: str  # "fibonacci" | "range_shift_base" | "close_tp"
+    kind: str  # "fibonacci" (grid mediation, any signed offset) | "close_tp" (trailing-stop close)
     price: float
     qty: float
     notional_usdt: float
