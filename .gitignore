@@ -5,3 +5,5 @@ __pycache__/
 *.txt
 !requirements.txt
 /STOP
+/bot_state.json
+/trade_history.json
