@@ -20,9 +20,10 @@
   "grid_step_pct": 0.5,
   "base_notional_usdt": 20.0,
 
-  "_comment_trailing_stop": "SHORT-only trailing stop (replaces the old fixed take profit). NOT active at position entry -- arms the instant mark_price first drops to activation_pct% BELOW the current Break-Even NETTO price (already fee/funding-adjusted), pinning the initial stop distance_pct% ABOVE that arming price. From then on the stop tracks distance_pct% above the LOWEST mark_price seen since arming -- it only ever moves down on new lows, never retraces upward on a bounce. Closes the whole position at market the instant mark_price rises to touch/cross the stop. Both percentages are real PRICE percentages, not leveraged-margin percentages.",
+  "_comment_trailing_stop": "enabled=false -> FIXED take profit: closes the whole position at market the instant mark_price first drops activation_pct% BELOW the current Break-Even NETTO price (already fee/funding-adjusted) -- single threshold, no arming, no trailing (distance_pct is ignored in this mode). enabled=true -> SHORT-only TRAILING stop: arms at that same activation_pct% threshold, then pins the initial stop distance_pct% ABOVE the arming price and only ever trails down on new lows. Both percentages are real PRICE percentages, not leveraged-margin percentages.",
   "trailing_stop": {
-    "activation_pct": 1.0,
+    "enabled": false,
+    "activation_pct": 0.4,
     "distance_pct": 0.7
   },
 

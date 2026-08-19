@@ -102,6 +102,7 @@ class StrategyConfig:
     margin_mode: str
     grid_step_pct: float
     base_notional_usdt: float
+    trailing_stop_enabled: bool
     trailing_activation_pct: float
     trailing_distance_pct: float
     taker_rate: float
@@ -140,6 +141,7 @@ class StrategyConfig:
             margin_mode=raw["margin_mode"],
             grid_step_pct=float(os.environ.get("GRID_STEP_PERCENT") or raw["grid_step_pct"]) / 100.0,
             base_notional_usdt=float(raw["base_notional_usdt"]),
+            trailing_stop_enabled=bool(raw["trailing_stop"].get("enabled", True)),
             trailing_activation_pct=float(raw["trailing_stop"]["activation_pct"]),
             trailing_distance_pct=float(raw["trailing_stop"]["distance_pct"]),
             taker_rate=float(raw["fees"]["taker_rate"]),

@@ -60,17 +60,21 @@ Disabling `stress_test.enabled` restores the exact production behavior
 (fixed timeframe, candle-close evaluation, capped Fibonacci level, no RSI
 trigger) with no other code path affected.
 
-Exit is a SHORT-only TRAILING stop (`_maybe_handle_trailing_stop`), not a
-fixed take profit: it is NOT active at position entry. It arms the instant
-`mark_price` first drops to `trailing_stop.activation_pct`% below the
-current Break-Even NETTO price (see `fees.compute_breakeven_prices` --
-already fee/funding-adjusted), pinning the initial stop
-`trailing_stop.distance_pct`% ABOVE that arming price. From then on, every
-tick that makes a NEW LOW pulls the stop down with it (still
-`distance_pct`% above the lowest mark_price seen since arming) -- the stop
-never retraces upward on a bounce. The position closes at market the
-instant `mark_price` rises back up to touch or cross the stop. Both
-percentages are real PRICE percentages, not leveraged-margin percentages.
+Exit is config-driven via `trailing_stop.enabled`:
+  - `false` (current default): FIXED take profit (`_maybe_handle_fixed_take_profit`)
+    -- closes the whole position at market the instant `mark_price` first drops
+    `trailing_stop.activation_pct`% below the current Break-Even NETTO price
+    (see `fees.compute_breakeven_prices` -- already fee/funding-adjusted). A
+    single threshold check, no arming, no trailing; `distance_pct` is unused.
+  - `true`: SHORT-only TRAILING stop (`_maybe_handle_trailing_stop`) -- NOT
+    active at position entry. It arms the instant `mark_price` first drops to
+    that same `activation_pct`% threshold, pinning the initial stop
+    `trailing_stop.distance_pct`% ABOVE that arming price. From then on, every
+    tick that makes a NEW LOW pulls the stop down with it (still
+    `distance_pct`% above the lowest mark_price seen since arming) -- the stop
+    never retraces upward on a bounce. The position closes at market the
+    instant `mark_price` rises back up to touch or cross the stop.
+Both percentages are real PRICE percentages, not leveraged-margin percentages.
 
 Grid-triggered entries and trailing-stop-triggered closes both mutate the
 same position state, and each involves at least one `await` (an exchange
@@ -473,7 +477,27 @@ class GridBotOrchestrator:
             self._trailing_lowest_price = None
             return
 
-        await self._maybe_handle_trailing_stop(mark_price)
+        if self.cfg.trailing_stop_enabled:
+            await self._maybe_handle_trailing_stop(mark_price)
+        else:
+            await self._maybe_handle_fixed_take_profit(mark_price)
+
+    async def _maybe_handle_fixed_take_profit(self, mark_price: float) -> None:
+        """Fixed take-profit (used when `trailing_stop.enabled` is false): closes
+        the whole position at market the instant mark_price first drops
+        `trailing_activation_pct`% below Break-Even NETTO. No arming, no
+        trailing -- it's a single fixed threshold, reusing the same field that
+        sets the trailing stop's activation distance when trailing is enabled."""
+        _, be_net = compute_breakeven_prices(self.position.entries, self.fee_engine)
+        if be_net <= 0:
+            return
+        tp_price = be_net * (1.0 - self.cfg.trailing_activation_pct / 100.0)
+        if mark_price <= tp_price:
+            logger.info(
+                "Take Profit COLPITO: mark=%.4f <= soglia=%.4f (%.2f%% sotto Break-Even NETTO).",
+                mark_price, tp_price, self.cfg.trailing_activation_pct,
+            )
+            await self._close_cycle(mark_price)
 
     def _trailing_activation_price(self) -> float | None:
         """SHORT profits as price falls, so the trailing stop arms the
