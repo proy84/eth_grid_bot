@@ -23,7 +23,7 @@
   "_comment_trailing_stop": "enabled=false -> FIXED take profit: closes the whole position at market the instant mark_price first drops activation_pct% BELOW the current Break-Even NETTO price (already fee/funding-adjusted) -- single threshold, no arming, no trailing (distance_pct is ignored in this mode). enabled=true -> SHORT-only TRAILING stop: arms at that same activation_pct% threshold, then pins the initial stop distance_pct% ABOVE the arming price and only ever trails down on new lows. Both percentages are real PRICE percentages, not leveraged-margin percentages.",
   "trailing_stop": {
     "enabled": false,
-    "activation_pct": 0.4,
+    "activation_pct": 0.5,
     "distance_pct": 0.7
   },
 
@@ -54,9 +54,9 @@
   "_comment_stress_test": "High-frequency time-acceleration stress test mode. When enabled=true it REPLACES the normal timeframe/candle-close scheduler: all ranges evaluate at base_interval_sec (flat, no per-range table) UNLESS RSI tick mode is active, in which case grid orders fire every tick_mode_interval_sec instead. RSI tick mode is triggered by an RSI(rsi_period) reading on rsi_timeframe crossing UP through rsi_overbought_threshold (a fresh crossing from below -- staying overbought does not re-trigger it), and stays on until the position's Break-Even price catches up to the market's current grid band, at which point Range 0 re-anchors there and the base cadence resumes. unlimited_fib_level=true removes the risk.max_fib_level safety cap for this mode only. Set enabled=false to fall back to the normal production scheduler/cap untouched.",
   "stress_test": {
     "enabled": true,
-    "base_interval_sec": 60,
+    "base_interval_sec": 3600,
     "tick_mode_interval_sec": 1,
-    "rsi_timeframe": "5m",
+    "rsi_timeframe": "1d",
     "rsi_period": 14,
     "rsi_overbought_threshold": 70,
     "neutral_zone_enabled": true,
