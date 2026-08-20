@@ -217,6 +217,13 @@ class ExchangeClient:
         raw_qty = notional_usdt / price
         return float(self._public.amount_to_precision(self.cfg.symbol, raw_qty))
 
+    def min_order_qty(self) -> float:
+        """Exchange-enforced minimum tradable amount for the symbol (e.g. 0.01
+        ETH on ETH/USDT:USDT). Read live from the market catalogue rather than
+        hard-coded, so it stays correct even if Bybit changes it."""
+        market = self._public.market(self.cfg.symbol)
+        return float((market.get("limits") or {}).get("amount", {}).get("min") or 0.0)
+
     # -- orders / account (Bybit DEMO, authenticated) -------------------------
 
     async def place_market_short(self, qty: float) -> FilledOrder:

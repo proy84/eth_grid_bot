@@ -407,6 +407,22 @@ class GridBotOrchestrator:
                                 order.notional_usdt, ref_price, order.kind)
                 return
 
+            # Floors qty up to the exchange's minimum tradable amount if the
+            # configured notional would compute a smaller size than that --
+            # e.g. base_notional_usdt=20 stops being enough once ETH trades
+            # above ~2000 (0.01 min * price). Without this, a rising price
+            # would eventually make every order raise InvalidOrder and kill
+            # the bot; this keeps it tradable at any price, indefinitely,
+            # instead of hard-coding price thresholds that would need manual
+            # updates forever.
+            min_qty = self.exchange.min_order_qty()
+            if min_qty > 0 and qty < min_qty:
+                logger.info(
+                    "Qty %.6f (da notional=%.2f @ %.2f) sotto il minimo exchange %.6f -> alzata al minimo.",
+                    qty, order.notional_usdt, ref_price, min_qty,
+                )
+                qty = min_qty
+
             try:
                 filled = await self.exchange.place_market_short(qty)
             except Exception:
