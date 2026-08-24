@@ -321,34 +321,48 @@ class GridBotOrchestrator:
         return False
 
     async def _grid_scheduler_loop(self) -> None:
+        """Every iteration's body runs under its own try/except: unlike a
+        transient network error inside `_run_grid_evaluation` (already
+        handled there), an unexpected exception ANYWHERE in this loop
+        (scheduling math, Neutral Zone, order execution/bookkeeping) would
+        otherwise propagate out of this coroutine, which `asyncio.gather` in
+        `start()` would treat as fatal -- cancelling the tick loop right
+        along with it and killing the whole process silently. Mirrors the
+        try/except already wrapping `_tick_loop`'s body."""
         while not self._stop_event.is_set():
-            if self.cfg.stress_test_enabled:
-                if self._rsi_tick_mode_active:
-                    sleep_sec = self.cfg.stress_test_tick_mode_interval_sec
-                    logger.info("[stress-test] Next grid evaluation in %.1fs (RSI tick mode).", sleep_sec)
+            try:
+                if self.cfg.stress_test_enabled:
+                    if self._rsi_tick_mode_active:
+                        sleep_sec = self.cfg.stress_test_tick_mode_interval_sec
+                        logger.info("[stress-test] Next grid evaluation in %.1fs (RSI tick mode).", sleep_sec)
+                        if await self._wait_or_stop(sleep_sec):
+                            break
+                    else:
+                        sleep_sec = self.cfg.stress_test_base_interval_sec
+                        logger.info("[stress-test] Next grid evaluation in %.1fs (base cadence).", sleep_sec)
+                        if await self._wait_interruptible(sleep_sec):
+                            break
+                        if self._cadence_reset_event.is_set():
+                            self._cadence_reset_event.clear()
+                            logger.info(
+                                "[stress-test] Cadenza oraria riavviata: nuovo ciclo aperto durante l'attesa -- "
+                                "prossimo ordine schedulato tra %.0fs esatti da adesso.",
+                                self.cfg.stress_test_base_interval_sec,
+                            )
+                            continue
+                else:
+                    sleep_sec = self._seconds_until_next_boundary()
+                    next_run = datetime.fromtimestamp(time.time() + sleep_sec, tz=timezone.utc)
+                    logger.info("Next grid evaluation in %.1fs, at %s (timeframe=%s).",
+                                sleep_sec, next_run.strftime("%Y-%m-%d %H:%M:%S UTC"), self.cfg.timeframe)
                     if await self._wait_or_stop(sleep_sec):
                         break
-                else:
-                    sleep_sec = self.cfg.stress_test_base_interval_sec
-                    logger.info("[stress-test] Next grid evaluation in %.1fs (base cadence).", sleep_sec)
-                    if await self._wait_interruptible(sleep_sec):
-                        break
-                    if self._cadence_reset_event.is_set():
-                        self._cadence_reset_event.clear()
-                        logger.info(
-                            "[stress-test] Cadenza oraria riavviata: nuovo ciclo aperto durante l'attesa -- "
-                            "prossimo ordine schedulato tra %.0fs esatti da adesso.",
-                            self.cfg.stress_test_base_interval_sec,
-                        )
-                        continue
-            else:
-                sleep_sec = self._seconds_until_next_boundary()
-                next_run = datetime.fromtimestamp(time.time() + sleep_sec, tz=timezone.utc)
-                logger.info("Next grid evaluation in %.1fs, at %s (timeframe=%s).",
-                            sleep_sec, next_run.strftime("%Y-%m-%d %H:%M:%S UTC"), self.cfg.timeframe)
-                if await self._wait_or_stop(sleep_sec):
-                    break
-            await self._run_grid_evaluation()
+                await self._run_grid_evaluation()
+            except Exception:
+                logger.exception(
+                    "Errore imprevisto nel grid scheduler loop -- il bot NON si ferma, riprovo al prossimo giro "
+                    "invece di lasciare che l'eccezione termini l'intero processo."
+                )
 
     async def _run_grid_evaluation(self) -> None:
         if self.cfg.stress_test_enabled:
