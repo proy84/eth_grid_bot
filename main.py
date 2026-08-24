@@ -771,32 +771,48 @@ class GridBotOrchestrator:
                              "resetting local state only.")
                 reset_ref_price = mark_price
             else:
-                close_fee = self.fee_engine.taker_fee_for_notional(filled.notional_usdt)
-                self.cycle_orders.append(OrderRecord(
-                    timestamp_ms=filled.timestamp_ms, fib_level=0, kind="close_tp",
-                    price=filled.price, qty=filled.qty, notional_usdt=filled.notional_usdt, fee_usdt=close_fee,
-                ))
-
-                gross_pnl = (avg_entry - filled.price) * qty
-                total_fees = open_fees + close_fee
-                total_funding = self.fee_engine.total_funding_cashflow()
-                net_pnl = gross_pnl - total_fees + total_funding
-
-                self.analytics.record_cycle(CycleRecord(
-                    cycle_id=self.cycle_id,
-                    start_ts_ms=self.cycle_start_ts_ms,
-                    end_ts_ms=filled.timestamp_ms,
-                    orders=self.cycle_orders,
-                    max_fib_level=max_fib,
-                    gross_pnl_usdt=gross_pnl,
-                    total_fees_usdt=total_fees,
-                    total_funding_usdt=total_funding,
-                    net_pnl_usdt=net_pnl,
-                    base_notional_at_start_usdt=self.base_notional_usdt,
-                ))
-                logger.info("TRAILING STOP: cycle=%d net_pnl=%.2f USDT (gross=%.2f fees=%.2f funding=%.2f)",
-                            self.cycle_id, net_pnl, gross_pnl, total_fees, total_funding)
+                # The exchange position is already closed at this point (the
+                # `close_position_market()` call above succeeded) -- from here
+                # on, `reset_ref_price` MUST end up set and `_reset_state_after_
+                # close` MUST run no matter what, even if recording the cycle's
+                # stats fails (e.g. a disk I/O error writing trade_history.json,
+                # plausible on flaky mobile storage). Otherwise the bot's local
+                # state would keep believing the old position is still open
+                # while the exchange is flat -- a silent desync, not just a
+                # missed log line.
                 reset_ref_price = filled.price
+                try:
+                    close_fee = self.fee_engine.taker_fee_for_notional(filled.notional_usdt)
+                    self.cycle_orders.append(OrderRecord(
+                        timestamp_ms=filled.timestamp_ms, fib_level=0, kind="close_tp",
+                        price=filled.price, qty=filled.qty, notional_usdt=filled.notional_usdt, fee_usdt=close_fee,
+                    ))
+
+                    gross_pnl = (avg_entry - filled.price) * qty
+                    total_fees = open_fees + close_fee
+                    total_funding = self.fee_engine.total_funding_cashflow()
+                    net_pnl = gross_pnl - total_fees + total_funding
+
+                    self.analytics.record_cycle(CycleRecord(
+                        cycle_id=self.cycle_id,
+                        start_ts_ms=self.cycle_start_ts_ms,
+                        end_ts_ms=filled.timestamp_ms,
+                        orders=self.cycle_orders,
+                        max_fib_level=max_fib,
+                        gross_pnl_usdt=gross_pnl,
+                        total_fees_usdt=total_fees,
+                        total_funding_usdt=total_funding,
+                        net_pnl_usdt=net_pnl,
+                        base_notional_at_start_usdt=self.base_notional_usdt,
+                    ))
+                    logger.info("TRAILING STOP: cycle=%d net_pnl=%.2f USDT (gross=%.2f fees=%.2f funding=%.2f)",
+                                self.cycle_id, net_pnl, gross_pnl, total_fees, total_funding)
+                except Exception:
+                    logger.exception(
+                        "Failed to record closed cycle stats (trade_history.json) -- resetting local state "
+                        "anyway since the exchange position is already closed; this cycle's stats are lost "
+                        "but the bot stays in sync with the exchange."
+                    )
 
             self._reset_state_after_close(reset_ref_price)
 

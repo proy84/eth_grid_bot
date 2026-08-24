@@ -82,12 +82,17 @@ def _env_bool(name: str, default: bool) -> bool:
 
 @lru_cache(maxsize=None)
 def fibonacci(n: int) -> int:
-    """Standard sequence: fib(1)=1, fib(2)=1, fib(3)=2, fib(4)=3, fib(5)=5 ..."""
+    """Standard sequence: fib(1)=1, fib(2)=1, fib(3)=2, fib(4)=3, fib(5)=5 ...
+    Iterative on purpose (not the textbook recursive definition): with
+    `risk.max_fib_level` disabled (`stress_test.unlimited_fib_level=true`),
+    `n` has no upper bound, and Python's default recursion limit (1000)
+    would otherwise turn a large-enough grid offset into a crash."""
     if n <= 0:
         return 0
-    if n <= 2:
-        return 1
-    return fibonacci(n - 1) + fibonacci(n - 2)
+    a, b = 0, 1
+    for _ in range(n - 1):
+        a, b = b, a + b
+    return b
 
 
 # --------------------------------------------------------------------------- #
