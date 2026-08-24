@@ -96,6 +96,12 @@ anchor is ever set:
      base SHORT at market, anchoring a fresh grid for the new cycle.
 Every subsequent order (at any offset, positive or negative, relative to
 that one fixed anchor) is decided strictly on candle close.
+
+In `stress_test.enabled` mode, case 2 also restarts the base-cadence
+countdown (`_cadence_reset_event`): the cycle's SECOND order always lands
+exactly `stress_test_base_interval_sec` after that immediate re-open, rather
+than the base cadence continuing to tick on its own schedule regardless of
+when cycles happen to close and reopen.
 """
 
 from __future__ import annotations
@@ -169,6 +175,14 @@ class GridBotOrchestrator:
         self._last_funding_poll_ts = 0.0
         self._stop_event = asyncio.Event()
         self._position_lock = asyncio.Lock()
+        # Set by `_close_cycle` right after the new cycle's immediate base
+        # order fires; consumed by `_wait_interruptible` to abort the base
+        # cadence's countdown early and restart it fresh from that moment --
+        # so "second order of the cycle" always lands exactly
+        # `stress_test_base_interval_sec` after the cycle's immediate first
+        # order, instead of the base cadence ticking on its own independent
+        # schedule regardless of cycle boundaries.
+        self._cadence_reset_event = asyncio.Event()
         # Updated by the tick loop every `tick_poll_interval_sec`; used by the
         # stress-test scheduler to pick the next evaluation delay without an
         # extra dedicated price fetch. Only ever a few seconds stale, which is
@@ -285,13 +299,14 @@ class GridBotOrchestrator:
 
     async def _wait_interruptible(self, timeout_sec: float) -> bool:
         """Like `_wait_or_stop`, but for the stress-test BASE cadence only:
-        polls in 1s steps so that if RSI tick mode activates mid-wait (see
-        `_maybe_update_rsi`), the scheduler breaks out immediately instead of
-        finishing out a stale up-to-5-minute wait -- the whole point of the
-        RSI trigger is a fast reaction to an overbought reading. Returns True
-        only if shutdown was requested; a tick-mode interruption returns
-        False just like a normal timeout, so the caller re-decides cadence
-        from scratch either way."""
+        polls in 1s steps so it can break out early on either of two events --
+        RSI tick mode activating mid-wait (see `_maybe_update_rsi`), or a new
+        cycle starting mid-wait (`_cadence_reset_event`, set by `_close_cycle`
+        right after the new cycle's immediate order fires) -- instead of
+        finishing out a stale wait. Returns True only if shutdown was
+        requested; either other interruption returns False just like a
+        normal timeout, so the caller re-decides cadence from scratch
+        either way."""
         elapsed = 0.0
         step = 1.0
         while elapsed < timeout_sec:
@@ -300,6 +315,8 @@ class GridBotOrchestrator:
                 return True
             elapsed += this_step
             if self._rsi_tick_mode_active:
+                return False
+            if self._cadence_reset_event.is_set():
                 return False
         return False
 
@@ -316,6 +333,14 @@ class GridBotOrchestrator:
                     logger.info("[stress-test] Next grid evaluation in %.1fs (base cadence).", sleep_sec)
                     if await self._wait_interruptible(sleep_sec):
                         break
+                    if self._cadence_reset_event.is_set():
+                        self._cadence_reset_event.clear()
+                        logger.info(
+                            "[stress-test] Cadenza oraria riavviata: nuovo ciclo aperto durante l'attesa -- "
+                            "prossimo ordine schedulato tra %.0fs esatti da adesso.",
+                            self.cfg.stress_test_base_interval_sec,
+                        )
+                        continue
             else:
                 sleep_sec = self._seconds_until_next_boundary()
                 next_run = datetime.fromtimestamp(time.time() + sleep_sec, tz=timezone.utc)
@@ -763,6 +788,12 @@ class GridBotOrchestrator:
 
         logger.info("Reopening the new base SHORT immediately at market (no candle-close wait).")
         await self._execute_immediate_base_order(kind="range_zero_reset_immediate")
+        # Wakes up `_grid_scheduler_loop` (if it's mid-wait on the base cadence)
+        # to abort and restart its countdown fresh from right now -- so the
+        # cycle's SECOND order lands exactly `stress_test_base_interval_sec`
+        # after this immediate first order, instead of the base cadence
+        # ticking on independently of cycle boundaries.
+        self._cadence_reset_event.set()
 
     def _reset_state_after_close(self, ref_price: float) -> None:
         """Synchronous on purpose: called while `_position_lock` is held, so it
