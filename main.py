@@ -264,6 +264,7 @@ class GridBotOrchestrator:
                 taker_fee_usdt=0.0, fib_level=0, timestamp_ms=int(time.time() * 1000),
             ))
             self.grid.full_reset(existing.entry_price)
+            await self._maybe_update_base_notional_from_equity()
             logger.info("Range 0 anchored to reconciled entry price %.4f", existing.entry_price)
             return
 
@@ -284,10 +285,46 @@ class GridBotOrchestrator:
                               "the position stays flat until the next tick can retry implicitly.")
             return
 
+        await self._maybe_update_base_notional_from_equity()
         base_notional = self._effective_base_notional(mark_price)
         order = PlannedOrder(range_offset=0, fib_n=1,
                               notional_usdt=fibonacci(1) * base_notional, kind=kind)
         await self._execute_planned_order(order, mark_price, int(time.time() * 1000))
+
+    async def _maybe_update_base_notional_from_equity(self) -> None:
+        """Equity-based sizing (config `equity_based_sizing.enabled`): at every
+        cycle's genesis (bootstrap, and immediate re-open after a close),
+        re-reads the account's REAL total equity and sets `base_notional_usdt`
+        to `equity_based_sizing_percentage`% of it -- replacing the old
+        cycle-count-based auto-compound (see `_reset_state_after_close`, which
+        skips its own multiplication when this is enabled) with sizing that
+        tracks actual capital: it grows only if the account really grew, and
+        shrinks on its own after a drawdown, instead of ratcheting up forever
+        regardless of performance. Recomputed fresh every cycle (never
+        cached/persisted) so it always reflects current capital. On any
+        failure (network, unexpected response shape, non-positive equity),
+        `base_notional_usdt` is left unchanged -- the cycle still opens with
+        whatever value it last held, rather than blocking or crashing."""
+        if not self.cfg.equity_based_sizing_enabled:
+            return
+        try:
+            equity = await self.exchange.fetch_total_equity()
+        except Exception:
+            logger.exception(
+                "Failed to fetch account equity for equity-based sizing; keeping base_notional_usdt=%.2f unchanged.",
+                self.base_notional_usdt,
+            )
+            return
+        if equity <= 0:
+            logger.warning("Fetched equity <= 0 (%.2f); keeping base_notional_usdt=%.2f unchanged.",
+                            equity, self.base_notional_usdt)
+            return
+        old = self.base_notional_usdt
+        self.base_notional_usdt = equity * self.cfg.equity_based_sizing_percentage / 100.0
+        logger.info(
+            "Equity-based sizing: equity totale=%.2f USDT -> base_notional_usdt %.2f -> %.2f (%.2f%% dell'equity).",
+            equity, old, self.base_notional_usdt, self.cfg.equity_based_sizing_percentage,
+        )
 
     def _effective_base_notional(self, price: float) -> float:
         """The Fibonacci sequence's base unit (fib_n=1) for THIS evaluation:
@@ -863,8 +900,12 @@ class GridBotOrchestrator:
         """Synchronous on purpose: called while `_position_lock` is held, so it
         must not `await` (that would yield control mid-reset to another
         coroutine waiting on the same lock -- fine for correctness since the
-        lock stays held, but pointless since there's no I/O here anyway)."""
-        if self.cfg.auto_compound_enabled:
+        lock stays held, but pointless since there's no I/O here anyway).
+        Skips the legacy cycle-count auto-compound entirely when equity-based
+        sizing is enabled -- that path instead sets `base_notional_usdt`
+        itself, asynchronously, in `_maybe_update_base_notional_from_equity`
+        (called right after this, from `_execute_immediate_base_order`)."""
+        if not self.cfg.equity_based_sizing_enabled and self.cfg.auto_compound_enabled:
             old = self.base_notional_usdt
             self.base_notional_usdt *= (1.0 + self.cfg.auto_compound_percentage / 100.0)
             logger.info("Auto-compound applied: base_notional_usdt %.2f -> %.2f", old, self.base_notional_usdt)

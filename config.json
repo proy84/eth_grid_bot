@@ -32,9 +32,16 @@
     "maker_rate": 0.0002
   },
 
+  "_comment_auto_compound": "Legacy sizing: multiplies base_notional_usdt by (1+percentage/100) on every completed cycle, regardless of account performance. Ignored entirely while equity_based_sizing.enabled=true below (kept here only so you can revert by flipping that flag off).",
   "auto_compound": {
     "enabled": true,
     "percentage": 0.5
+  },
+
+  "_comment_equity_based_sizing": "Replaces auto_compound above when enabled=true: at the start of every cycle (bootstrap and every immediate re-open after a close), re-reads the account's real total equity (Bybit V5 totalEquity, all collateral assets combined) and sets base_notional_usdt to percentage% of it. Self-correcting -- grows only if the account actually grew, shrinks on its own after a drawdown -- instead of compounding blindly by cycle count. base_notional_usdt above is only the seed value used before the first equity read, or if a read ever fails.",
+  "equity_based_sizing": {
+    "enabled": true,
+    "percentage": 1.0
   },
 
   "polling": {

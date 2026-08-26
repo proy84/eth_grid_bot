@@ -114,6 +114,8 @@ class StrategyConfig:
     maker_rate: float
     auto_compound_enabled: bool
     auto_compound_percentage: float
+    equity_based_sizing_enabled: bool
+    equity_based_sizing_percentage: float
     tick_poll_interval_sec: float
     funding_poll_interval_sec: float
     trade_history_path: str
@@ -154,6 +156,8 @@ class StrategyConfig:
             maker_rate=float(raw["fees"].get("maker_rate", 0.0)),
             auto_compound_enabled=bool(raw["auto_compound"]["enabled"]),
             auto_compound_percentage=float(raw["auto_compound"]["percentage"]),
+            equity_based_sizing_enabled=bool(raw.get("equity_based_sizing", {}).get("enabled", False)),
+            equity_based_sizing_percentage=float(raw.get("equity_based_sizing", {}).get("percentage", 1.0)),
             tick_poll_interval_sec=float(raw["polling"]["tick_poll_interval_sec"]),
             funding_poll_interval_sec=float(raw["polling"]["funding_poll_interval_sec"]),
             trade_history_path=raw["paths"]["trade_history_path"],

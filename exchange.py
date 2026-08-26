@@ -224,6 +224,24 @@ class ExchangeClient:
         market = self._public.market(self.cfg.symbol)
         return float((market.get("limits") or {}).get("amount", {}).get("min") or 0.0)
 
+    async def fetch_total_equity(self) -> float:
+        """Bybit V5 Unified Account total equity in USD, across ALL collateral
+        assets -- NOT just USDT. CCXT's unified `balance['USDT']['total']`
+        only reflects the USDT-denominated sub-balance, which massively
+        understates real equity on an account also holding other coins as
+        collateral (confirmed empirically on this demo account: ~16 USDT-only
+        vs ~2992 real total equity). Reads Bybit's own
+        `info.result.list[0].totalEquity` field instead, which already
+        aggregates every collateral asset's USD value."""
+        balance = await self._retry(self._private.fetch_balance)
+        try:
+            account = balance["info"]["result"]["list"][0]
+            return float(account["totalEquity"])
+        except (KeyError, IndexError, TypeError, ValueError):
+            logger.exception("Unexpected balance response shape while reading totalEquity; raw info: %s",
+                              balance.get("info"))
+            return 0.0
+
     # -- orders / account (Bybit DEMO, authenticated) -------------------------
 
     async def place_market_short(self, qty: float) -> FilledOrder:
