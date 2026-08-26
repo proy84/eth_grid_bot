@@ -127,6 +127,7 @@ class StrategyConfig:
     use_testnet: bool
     stress_test_enabled: bool
     stress_test_base_interval_sec: float
+    stress_test_rsi_enabled: bool
     stress_test_tick_mode_interval_sec: float
     stress_test_rsi_timeframe: str
     stress_test_rsi_period: int
@@ -166,6 +167,7 @@ class StrategyConfig:
             use_testnet=_env_bool("USE_TESTNET", bool(raw["exchange"].get("demo", True))),
             stress_test_enabled=bool(stress_test.get("enabled", False)),
             stress_test_base_interval_sec=float(stress_test.get("base_interval_sec", 300.0)),
+            stress_test_rsi_enabled=bool(stress_test.get("rsi_enabled", True)),
             stress_test_tick_mode_interval_sec=float(stress_test.get("tick_mode_interval_sec", 1.0)),
             stress_test_rsi_timeframe=stress_test.get("rsi_timeframe", "1m"),
             stress_test_rsi_period=int(stress_test.get("rsi_period", 14)),

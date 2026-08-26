@@ -440,11 +440,22 @@ class GridBotOrchestrator:
         """Holds `_position_lock` for its entire body so a concurrent take-profit
         close can never observe a half-added entry (or vice versa)."""
         async with self._position_lock:
-            qty = self.exchange.compute_qty_from_notional(order.notional_usdt, ref_price)
-            if qty <= 0:
-                logger.warning("Computed qty <= 0 for notional=%.2f @ price=%.2f; skipping %s order.",
-                                order.notional_usdt, ref_price, order.kind)
-                return
+            # `compute_qty_from_notional` itself can raise `InvalidOrder` (CCXT's
+            # `amount_to_precision`) when notional/price rounds to LESS than one
+            # full precision step -- it doesn't clamp to zero, it throws. So the
+            # floor below must be reachable even when the raw computation never
+            # produces a usable qty at all, not just when it produces a qty that
+            # is merely "too small but still computable" (the previous version of
+            # this floor only handled the latter case).
+            try:
+                qty = self.exchange.compute_qty_from_notional(order.notional_usdt, ref_price)
+            except Exception:
+                logger.info(
+                    "notional=%.2f @ prezzo=%.2f e sotto un intero step di precisione dell'exchange "
+                    "(quantita arrotondata a zero) -- alzo al minimo tradabile.",
+                    order.notional_usdt, ref_price,
+                )
+                qty = 0.0
 
             # Floors qty up to the exchange's minimum tradable amount if the
             # configured notional would compute a smaller size than that --
@@ -461,6 +472,11 @@ class GridBotOrchestrator:
                     qty, order.notional_usdt, ref_price, min_qty,
                 )
                 qty = min_qty
+
+            if qty <= 0:
+                logger.warning("Computed qty <= 0 for notional=%.2f @ price=%.2f; skipping %s order.",
+                                order.notional_usdt, ref_price, order.kind)
+                return
 
             try:
                 filled = await self.exchange.place_market_short(qty)
@@ -512,7 +528,7 @@ class GridBotOrchestrator:
         mark_price = await self.exchange.fetch_mark_price()
         self._last_mark_price = mark_price
 
-        if self.cfg.stress_test_enabled:
+        if self.cfg.stress_test_enabled and self.cfg.stress_test_rsi_enabled:
             await self._maybe_update_rsi(mark_price)
             await self._maybe_handle_rsi_tick_mode(mark_price)
 
