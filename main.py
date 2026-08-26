@@ -284,9 +284,26 @@ class GridBotOrchestrator:
                               "the position stays flat until the next tick can retry implicitly.")
             return
 
+        base_notional = self._effective_base_notional(mark_price)
         order = PlannedOrder(range_offset=0, fib_n=1,
-                              notional_usdt=fibonacci(1) * self.base_notional_usdt, kind=kind)
+                              notional_usdt=fibonacci(1) * base_notional, kind=kind)
         await self._execute_planned_order(order, mark_price, int(time.time() * 1000))
+
+    def _effective_base_notional(self, price: float) -> float:
+        """The Fibonacci sequence's base unit (fib_n=1) for THIS evaluation:
+        whichever is larger between the configured `base_notional_usdt` and
+        the exchange's minimum tradable notional at the current price
+        (`min_order_qty() * price`). Without this, a `base_notional_usdt`
+        below the exchange minimum would make every early fib_n level
+        (however many it takes for `Fibonacci(n) * base_notional_usdt` to
+        naturally exceed the minimum) collapse to the SAME floored qty
+        independently, producing a run of identical orders instead of a
+        real progression. Recomputed fresh on every call (not cached/stored)
+        so it stays correct at any price, indefinitely -- same philosophy as
+        `ExchangeClient.min_order_qty()` itself."""
+        min_qty = self.exchange.min_order_qty()
+        min_notional = min_qty * price if min_qty > 0 else 0.0
+        return max(self.base_notional_usdt, min_notional)
 
     # -- grid scheduling (rule 2/3: increments & shifts wait for candle close, --
     # -- unless stress_test.enabled overrides with a variable tick-driven cadence) -
@@ -385,7 +402,8 @@ class GridBotOrchestrator:
         max_fib_level = None if (self.cfg.stress_test_enabled and self.cfg.stress_test_unlimited_fib_level) \
             else self.cfg.max_fib_level
         breakeven_price = None if self.position.is_flat else self.position.avg_entry_price
-        order = evaluate_grid_close(price, self.grid, self.base_notional_usdt, max_fib_level, breakeven_price)
+        base_notional = self._effective_base_notional(price)
+        order = evaluate_grid_close(price, self.grid, base_notional, max_fib_level, breakeven_price)
         if self.cfg.stress_test_enabled and self.cfg.stress_test_neutral_zone_enabled:
             if self._maybe_suspend_for_neutral_zone(price):
                 return
