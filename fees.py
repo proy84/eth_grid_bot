@@ -5,8 +5,12 @@ Fee & funding accounting for the Only-Short ETH/USDT grid bot.
 
 Responsibilities:
   - Taker fee calculation for opening fills and estimated market-close fees.
-  - Funding rate cashflow tracking (a SHORT receives when funding_rate > 0,
-    pays when funding_rate < 0 -- standard perpetual convention).
+  - Funding cashflow tracking: `FundingPayment.cashflow_usdt` is a REALIZED
+    settlement amount read from the exchange's own ledger (see
+    `ExchangeClient.fetch_realized_funding` / `main._maybe_poll_funding`),
+    positive = received, negative = paid -- never derived locally from a
+    polled rate times notional (that approach fabricated a payment on every
+    poll regardless of whether Bybit had actually settled funding yet).
   - Net PnL breakdown (gross - open fees - estimated close fee + funding).
   - Break-even price calculation, both gross (average entry) and net
     (the close price at which realized net PnL is exactly zero).
