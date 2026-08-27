@@ -173,6 +173,10 @@ class GridBotOrchestrator:
         self.cycle_orders: List[OrderRecord] = []
 
         self._last_funding_poll_ts = 0.0
+        # Dedup set for realized funding settlement ids (see _maybe_poll_funding)
+        # -- a polling window can re-observe the same real settlement more than
+        # once before it ages out of the queried range.
+        self._recorded_funding_ids: set = set()
         self._stop_event = asyncio.Event()
         self._position_lock = asyncio.Lock()
         # Set by `_close_cycle` right after the new cycle's immediate base
@@ -793,6 +797,17 @@ class GridBotOrchestrator:
         )
 
     async def _maybe_poll_funding(self) -> None:
+        """Pulls REALIZED funding settlements from the exchange's own ledger
+        (`fetch_realized_funding`) instead of estimating one from the current/
+        live funding rate on every poll. Bybit settles funding roughly every
+        8h, not continuously -- the previous approach polled the live rate
+        every `funding_poll_interval_sec` (300s) and recorded a NEW payment
+        on every single poll, which fabricated ~16 phantom funding payments
+        for a position held only ~80 minutes (confirmed live: this inflated
+        Break-Even NETTO enough to fire the fixed take-profit ~12 USDT too
+        early). `self._recorded_funding_ids` deduplicates by the exchange's
+        own settlement id, since polling can see the same real settlement
+        more than once before it ages out of the queried window."""
         if self.position.is_flat:
             return
         now = time.time()
@@ -801,16 +816,17 @@ class GridBotOrchestrator:
         self._last_funding_poll_ts = now
 
         try:
-            rate = await self.exchange.fetch_current_funding_rate()
+            settlements = await self.exchange.fetch_realized_funding(since_ms=self.cycle_start_ts_ms)
         except Exception:
-            logger.exception("Failed to fetch current funding rate")
+            logger.exception("Failed to fetch realized funding history")
             return
 
-        self.fee_engine.record_funding(FundingPayment(
-            timestamp_ms=int(now * 1000), funding_rate=rate, notional_usdt=self.position.total_notional,
-        ))
-        logger.info("Funding recorded: rate=%.6f notional=%.2f cashflow=%.4f",
-                    rate, self.position.total_notional, rate * self.position.total_notional)
+        for funding_id, ts_ms, cashflow in settlements:
+            if funding_id in self._recorded_funding_ids:
+                continue
+            self._recorded_funding_ids.add(funding_id)
+            self.fee_engine.record_funding(FundingPayment(timestamp_ms=ts_ms, cashflow_usdt=cashflow))
+            logger.info("Funding realizzato registrato: id=%s cashflow=%.4f USDT", funding_id, cashflow)
 
     # -- trailing stop / cycle reset -------------------------------------------
 
@@ -912,6 +928,7 @@ class GridBotOrchestrator:
 
         self.position.clear()
         self.fee_engine.reset()
+        self._recorded_funding_ids.clear()
 
         self.grid.full_reset(ref_price)
         self._rsi_tick_mode_active = False

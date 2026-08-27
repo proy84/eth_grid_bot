@@ -209,9 +209,25 @@ class ExchangeClient:
         price = ticker.get("last") or ticker.get("close")
         return float(price)
 
-    async def fetch_current_funding_rate(self) -> float:
-        funding = await self._retry(self._public.fetch_funding_rate, self.cfg.symbol)
-        return float(funding.get("fundingRate") or 0.0)
+    async def fetch_realized_funding(self, since_ms: Optional[int] = None, limit: int = 50) -> List[Tuple[str, int, float]]:
+        """REALIZED funding settlements actually credited/debited to the
+        account for this symbol -- (id, timestamp_ms, cashflow_usdt). NOT the
+        current/estimated funding rate: Bybit settles funding roughly every
+        8h (confirmed empirically: timestamps land exactly on 00:00/08:00/
+        16:00 UTC), not continuously. Polling the live rate on a short
+        interval and recording a payment on every poll (the previous
+        approach) grossly over-counts funding income for a position held
+        less than one real settlement -- this reads the exchange's own
+        settlement ledger instead, so a short-lived position correctly
+        accrues ~0 funding rather than one fabricated payment per poll."""
+        raw = await self._retry(self._private.fetch_funding_history, self.cfg.symbol, since_ms, limit)
+        result: List[Tuple[str, int, float]] = []
+        for entry in raw:
+            eid, ts, amount = entry.get("id"), entry.get("timestamp"), entry.get("amount")
+            if eid is None or ts is None or amount is None:
+                continue
+            result.append((str(eid), int(ts), float(amount)))
+        return result
 
     def compute_qty_from_notional(self, notional_usdt: float, price: float) -> float:
         raw_qty = notional_usdt / price

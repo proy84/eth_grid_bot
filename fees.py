@@ -26,14 +26,13 @@ class FeeSchedule:
 
 @dataclass(frozen=True)
 class FundingPayment:
+    """A single REALIZED funding settlement, as reported by the exchange's own
+    ledger (`ExchangeClient.fetch_realized_funding`) -- `cashflow_usdt` is the
+    real amount already credited/debited to the account for that settlement,
+    not an estimate derived from a polled rate. Positive = good for our SHORT
+    book (received), negative = paid."""
     timestamp_ms: int
-    funding_rate: float
-    notional_usdt: float
-
-    @property
-    def cashflow_usdt(self) -> float:
-        # rate > 0 => longs pay shorts => positive cashflow for our SHORT book.
-        return self.notional_usdt * self.funding_rate
+    cashflow_usdt: float
 
 
 @dataclass(frozen=True)
