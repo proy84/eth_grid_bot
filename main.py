@@ -177,6 +177,14 @@ class GridBotOrchestrator:
         # -- a polling window can re-observe the same real settlement more than
         # once before it ages out of the queried range.
         self._recorded_funding_ids: set = set()
+        # Advances forward as settlements are processed, so a cycle that stays
+        # open for a very long time (weeks+) never needs more than a handful
+        # of NEW settlements per poll -- re-querying the whole cycle's history
+        # from cycle_start_ts_ms every time would eventually exceed
+        # fetch_realized_funding's page size (Bybit settles 3x/day -- a cycle
+        # open >~16 days would exceed limit=50) and silently miss some real
+        # settlements. None means "start from cycle_start_ts_ms".
+        self._funding_since_ms: int | None = None
         self._stop_event = asyncio.Event()
         self._position_lock = asyncio.Lock()
         # Set by `_close_cycle` right after the new cycle's immediate base
@@ -807,7 +815,11 @@ class GridBotOrchestrator:
         Break-Even NETTO enough to fire the fixed take-profit ~12 USDT too
         early). `self._recorded_funding_ids` deduplicates by the exchange's
         own settlement id, since polling can see the same real settlement
-        more than once before it ages out of the queried window."""
+        more than once before it ages out of the queried window. The query
+        window itself (`self._funding_since_ms`) advances past each processed
+        settlement rather than always re-querying from `cycle_start_ts_ms`,
+        so a cycle open for weeks never risks exceeding the API's page size
+        and silently dropping older settlements."""
         if self.position.is_flat:
             return
         now = time.time()
@@ -815,13 +827,15 @@ class GridBotOrchestrator:
             return
         self._last_funding_poll_ts = now
 
+        since_ms = self._funding_since_ms if self._funding_since_ms is not None else self.cycle_start_ts_ms
         try:
-            settlements = await self.exchange.fetch_realized_funding(since_ms=self.cycle_start_ts_ms)
+            settlements = await self.exchange.fetch_realized_funding(since_ms=since_ms)
         except Exception:
             logger.exception("Failed to fetch realized funding history")
             return
 
         for funding_id, ts_ms, cashflow in settlements:
+            self._funding_since_ms = max(since_ms, ts_ms + 1, self._funding_since_ms or 0)
             if funding_id in self._recorded_funding_ids:
                 continue
             self._recorded_funding_ids.add(funding_id)
@@ -929,6 +943,7 @@ class GridBotOrchestrator:
         self.position.clear()
         self.fee_engine.reset()
         self._recorded_funding_ids.clear()
+        self._funding_since_ms = None
 
         self.grid.full_reset(ref_price)
         self._rsi_tick_mode_active = False

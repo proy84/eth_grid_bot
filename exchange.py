@@ -236,9 +236,20 @@ class ExchangeClient:
     def min_order_qty(self) -> float:
         """Exchange-enforced minimum tradable amount for the symbol (e.g. 0.01
         ETH on ETH/USDT:USDT). Read live from the market catalogue rather than
-        hard-coded, so it stays correct even if Bybit changes it."""
-        market = self._public.market(self.cfg.symbol)
-        return float((market.get("limits") or {}).get("amount", {}).get("min") or 0.0)
+        hard-coded, so it stays correct even if Bybit changes it. Never raises:
+        `.market()` looking up an unexpected/missing symbol would otherwise
+        propagate out of `_effective_base_notional`, which is called from the
+        bootstrap path at startup with no enclosing try/except -- an
+        unhandled exception there would crash the whole process before the
+        main loops even start. Returns 0.0 (== "no minimum enforced", same
+        as an exchange that genuinely reports none) on any lookup failure."""
+        try:
+            market = self._public.market(self.cfg.symbol)
+            return float((market.get("limits") or {}).get("amount", {}).get("min") or 0.0)
+        except Exception:
+            logger.exception("Failed to look up min order qty for %s; treating as no minimum enforced.",
+                              self.cfg.symbol)
+            return 0.0
 
     async def fetch_total_equity(self) -> float:
         """Bybit V5 Unified Account total equity in USD, across ALL collateral
