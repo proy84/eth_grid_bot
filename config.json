@@ -13,7 +13,7 @@
   "_comment_symbol_timeframe": "symbol and grid_step_pct below are fallback defaults, overridden by .env's SYMBOL / GRID_STEP_PERCENT when set. timeframe drives the grid-evaluation clock automatically: '5m' evaluates at XX:05:01/XX:10:01/... (fast testing), '1h' evaluates at HH:00:01 (production).",
   "symbol": "ETH/USDT:USDT",
   "timeframe": "1m",
-  "leverage": 100,
+  "leverage": 150,
   "margin_mode": "cross",
   "position_side": "short",
 
