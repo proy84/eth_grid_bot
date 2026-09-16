@@ -116,6 +116,8 @@ class StrategyConfig:
     auto_compound_percentage: float
     equity_based_sizing_enabled: bool
     equity_based_sizing_percentage: float
+    eth_spot_accumulator_enabled: bool
+    eth_spot_accumulator_min_usdt_threshold: float
     tick_poll_interval_sec: float
     funding_poll_interval_sec: float
     trade_history_path: str
@@ -158,6 +160,9 @@ class StrategyConfig:
             auto_compound_percentage=float(raw["auto_compound"]["percentage"]),
             equity_based_sizing_enabled=bool(raw.get("equity_based_sizing", {}).get("enabled", False)),
             equity_based_sizing_percentage=float(raw.get("equity_based_sizing", {}).get("percentage", 1.0)),
+            eth_spot_accumulator_enabled=bool(raw.get("eth_spot_accumulator", {}).get("enabled", False)),
+            eth_spot_accumulator_min_usdt_threshold=float(
+                raw.get("eth_spot_accumulator", {}).get("min_usdt_threshold", 8.0)),
             tick_poll_interval_sec=float(raw["polling"]["tick_poll_interval_sec"]),
             funding_poll_interval_sec=float(raw["polling"]["funding_poll_interval_sec"]),
             trade_history_path=raw["paths"]["trade_history_path"],

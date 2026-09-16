@@ -185,6 +185,10 @@ class GridBotOrchestrator:
         # open >~16 days would exceed limit=50) and silently miss some real
         # settlements. None means "start from cycle_start_ts_ms".
         self._funding_since_ms: int | None = None
+        # Holds strong references to fire-and-forget background tasks (e.g.
+        # the optional spot-ETH accumulator hook) so asyncio can't garbage-
+        # collect one mid-execution; each task removes itself on completion.
+        self._background_tasks: set = set()
         self._stop_event = asyncio.Event()
         self._position_lock = asyncio.Lock()
         # Set by `_close_cycle` right after the new cycle's immediate base
@@ -302,6 +306,25 @@ class GridBotOrchestrator:
         order = PlannedOrder(range_offset=0, fib_n=1,
                               notional_usdt=fibonacci(1) * base_notional, kind=kind)
         await self._execute_planned_order(order, mark_price, int(time.time() * 1000))
+
+        # Optional, fully isolated feature (see eth_spot_accumulator.py):
+        # deliberately NOT `await`ed -- runs as a background task so a slow
+        # or hanging spot-market call can never delay this cycle's short
+        # entry, which has already fired above regardless of what happens
+        # here. The import is local and deferred (not at module level) and
+        # wrapped in its own try/except so that deleting eth_spot_accumulator.py
+        # degrades to a silent no-op here instead of crashing the bot --
+        # deleting that file is the entire removal procedure for this feature.
+        try:
+            import eth_spot_accumulator
+            task = asyncio.create_task(eth_spot_accumulator.maybe_buy_eth_spot(
+                self.exchange, self.cfg.eth_spot_accumulator_enabled,
+                self.cfg.eth_spot_accumulator_min_usdt_threshold,
+            ))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+        except Exception:
+            pass
 
     async def _maybe_update_base_notional_from_equity(self) -> None:
         """Equity-based sizing (config `equity_based_sizing.enabled`): at every
