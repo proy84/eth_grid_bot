@@ -877,6 +877,13 @@ class GridBotOrchestrator:
         released -- it goes through `_execute_planned_order`, which acquires
         the same lock itself, so it cannot be taken while still held here."""
         reset_ref_price: float | None = None
+        # Captured here, right after net_pnl is computed, so the Telegram
+        # notification (scheduled further below, only after the cycle is
+        # fully closed and reset) reports the CLOSED cycle's id -- reading
+        # self.cycle_id after `_reset_state_after_close` would give the NEW
+        # cycle's id instead, since that method increments it.
+        closed_cycle_id: int | None = None
+        closed_net_pnl: float | None = None
 
         async with self._position_lock:
             qty = self.position.total_qty
@@ -916,6 +923,8 @@ class GridBotOrchestrator:
                     total_fees = open_fees + close_fee
                     total_funding = self.fee_engine.total_funding_cashflow()
                     net_pnl = gross_pnl - total_fees + total_funding
+                    closed_cycle_id = self.cycle_id
+                    closed_net_pnl = net_pnl
 
                     self.analytics.record_cycle(CycleRecord(
                         cycle_id=self.cycle_id,
@@ -948,6 +957,23 @@ class GridBotOrchestrator:
         # after this immediate first order, instead of the base cadence
         # ticking on independently of cycle boundaries.
         self._cadence_reset_event.set()
+
+        # Optional, fully isolated feature (see notifier.py): same pattern as
+        # eth_spot_accumulator.py -- local, deferred import wrapped in its own
+        # try/except (so deleting notifier.py degrades to a silent no-op
+        # instead of crashing), scheduled as a background task so a slow/
+        # hanging Telegram call can never delay anything here (everything
+        # relevant has already happened above by this point).
+        if closed_cycle_id is not None and closed_net_pnl is not None:
+            try:
+                import notifier
+                task = asyncio.create_task(notifier.notify_cycle_closed(
+                    self.exchange, self.cfg.notifier_enabled, closed_cycle_id, closed_net_pnl,
+                ))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except Exception:
+                pass
 
     def _reset_state_after_close(self, ref_price: float) -> None:
         """Synchronous on purpose: called while `_position_lock` is held, so it
