@@ -46,7 +46,7 @@
 
   "_comment_eth_spot_accumulator": "Fully optional, isolated hedge (see eth_spot_accumulator.py) -- at every new cycle's genesis, spends 100% of the free USDT balance on a single SPOT market buy of ETH (never touches the short/perpetual strategy). min_usdt_threshold is a TECHNICAL minimum only (must clear the exchange's real spot order minimum too, checked live) -- it is NOT a liquidity buffer meant to be preserved; the intent is to hold as little idle USDT as possible. Set enabled=false to disable without removing the code; delete eth_spot_accumulator.py entirely to remove the feature.",
   "eth_spot_accumulator": {
-    "enabled": false,
+    "enabled": true,
     "min_usdt_threshold": 8.0
   },
 
