@@ -476,6 +476,12 @@ class GridBotOrchestrator:
         breakeven_price = None if self.position.is_flat else self.position.avg_entry_price
         base_notional = self._effective_base_notional(price)
         order = evaluate_grid_close(price, self.grid, base_notional, max_fib_level, breakeven_price)
+        if order is None:
+            logger.info(
+                "Grid evaluation: close=%.4f sotto il Break-Even (%.4f) -- nessun ordine (mediazione sotto BE disabilitata).",
+                price, breakeven_price,
+            )
+            return
         if self.cfg.stress_test_enabled and self.cfg.stress_test_neutral_zone_enabled:
             if self._maybe_suspend_for_neutral_zone(price):
                 return

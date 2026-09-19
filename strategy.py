@@ -307,22 +307,24 @@ def compute_rsi(closes: List[float], period: int) -> Optional[float]:
 
 def evaluate_grid_close(price: float, grid: RangeGrid, base_notional_usdt: float,
                          max_fib_level: Optional[int],
-                         breakeven_price: Optional[float] = None) -> PlannedOrder:
+                         breakeven_price: Optional[float] = None) -> Optional[PlannedOrder]:
     """Grid evaluation, run on EVERY candle close of the configured timeframe
-    (rule 2). Always returns exactly one order -- the bot never sits idle just
-    because price stayed inside the same range as last candle. The CALLER must
-    guarantee this only runs on candle close; this function itself is
-    stateless with respect to time AND never mutates `grid` -- the anchor is
-    fixed for the whole cycle (see `RangeGrid`), so this is pure classification.
+    (rule 2). Returns exactly one order UNLESS price is below Break-Even (see
+    below), in which case it returns `None` and the caller places nothing.
+    The CALLER must guarantee this only runs on candle close; this function
+    itself is stateless with respect to time AND never mutates `grid` -- the
+    anchor is fixed for the whole cycle (see `RangeGrid`), so this is pure
+    classification.
 
     Sizing depends on `price` vs `breakeven_price` (the position's Break-Even
     LORDO, i.e. `PositionManager.avg_entry_price` -- NOT the anchor/Range 0,
     which may itself be re-indexed to Break-Even but is a discrete band while
     this is a direct price comparison):
-      - `price < breakeven_price` (SHORT currently in PROFIT): always the
-        FIXED base quota, `BASE_NOTIONAL_USDT`, fib_n=1 -- no Fibonacci
-        multiplier, regardless of how far below or which offset it lands in.
-        Re-entering while already profitable shouldn't escalate size.
+      - `price < breakeven_price` (SHORT currently in PROFIT): returns `None`
+        -- NO order at all, regardless of how far below or which offset it
+        lands in. Mediating while already profitable is disabled entirely
+        (previously this placed a fixed-size order instead; that branch was
+        removed on request).
       - `price >= breakeven_price` (SHORT currently at a loss, recovering)
         -- or `breakeven_price is None` (no position yet, e.g. the very
         first order of a cycle, though that path bypasses this function
@@ -332,14 +334,12 @@ def evaluate_grid_close(price: float, grid: RangeGrid, base_notional_usdt: float
         fixed anchor) is positive, negative, or zero.
 
     `max_fib_level=None` disables the safety cap entirely (stress-test mode):
-    the Fibonacci level grows without bound as |offset| increases. The cap
-    is irrelevant to the fixed-quota (profit-zone) branch, since that is
-    always fib_n=1.
+    the Fibonacci level grows without bound as |offset| increases.
     """
     offset = grid.classify_offset(price)
 
     if breakeven_price is not None and price < breakeven_price:
-        return PlannedOrder(range_offset=offset, fib_n=1, notional_usdt=base_notional_usdt, kind="fibonacci")
+        return None
 
     n = abs(offset) + 1
     if max_fib_level is not None and n > max_fib_level:
