@@ -118,6 +118,7 @@ class StrategyConfig:
     equity_based_sizing_percentage: float
     eth_spot_accumulator_enabled: bool
     notifier_enabled: bool
+    grid_reindex_enabled: bool
     tick_poll_interval_sec: float
     funding_poll_interval_sec: float
     trade_history_path: str
@@ -162,6 +163,7 @@ class StrategyConfig:
             equity_based_sizing_percentage=float(raw.get("equity_based_sizing", {}).get("percentage", 1.0)),
             eth_spot_accumulator_enabled=bool(raw.get("eth_spot_accumulator", {}).get("enabled", False)),
             notifier_enabled=bool(raw.get("notifier", {}).get("enabled", False)),
+            grid_reindex_enabled=bool(raw.get("grid_reindex", {}).get("enabled", True)),
             tick_poll_interval_sec=float(raw["polling"]["tick_poll_interval_sec"]),
             funding_poll_interval_sec=float(raw["polling"]["funding_poll_interval_sec"]),
             trade_history_path=raw["paths"]["trade_history_path"],

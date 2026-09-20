@@ -597,8 +597,14 @@ class GridBotOrchestrator:
             # for the cycle's very first fill (was_flat_before), since at
             # that instant Break-Even trivially equals the just-set anchor,
             # which would spuriously re-index to -1 (see RangeGrid.reindex_
-            # to_breakeven's docstring for why).
-            if not was_flat_before:
+            # to_breakeven's docstring for why). Also skipped entirely when
+            # `grid_reindex_enabled=False`: zero_index then stays at 0 for
+            # the whole cycle, so every offset (and therefore every
+            # Fibonacci level) is always measured from the cycle's ORIGINAL
+            # anchor instead of "resetting" every time Break-Even catches up
+            # to a new band -- Fibonacci sizes grow faster over a long,
+            # heavily-mediated cycle than with re-indexing enabled.
+            if not was_flat_before and self.cfg.grid_reindex_enabled:
                 old_zero_index = self.grid.zero_index
                 if self.grid.reindex_to_breakeven(self.position.avg_entry_price):
                     logger.info(

@@ -54,6 +54,11 @@
     "enabled": true
   },
 
+  "_comment_grid_reindex": "enabled=true (default): Range 0 follows the Break-Even, re-pointed after every fill -- Fibonacci offsets are always measured relative to wherever Break-Even currently sits, so the multiplier effectively 'resets' each time Break-Even catches up to a new band. enabled=false: the grid stays TRULY static for the whole cycle -- zero_index never moves from 0, so every offset (and Fibonacci level) is always measured from the cycle's ORIGINAL anchor price. Price quotes/levels themselves are identical either way; this only changes which level is LABELED Range 0, and therefore how fast Fibonacci sizing grows over a long, heavily-mediated cycle.",
+  "grid_reindex": {
+    "enabled": false
+  },
+
   "polling": {
     "tick_poll_interval_sec": 2,
     "funding_poll_interval_sec": 300
