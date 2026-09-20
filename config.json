@@ -44,10 +44,9 @@
     "percentage": 1.0
   },
 
-  "_comment_eth_spot_accumulator": "Fully optional, isolated hedge (see eth_spot_accumulator.py) -- at every new cycle's genesis, spends 100% of the free USDT balance on a single SPOT market buy of ETH (never touches the short/perpetual strategy). min_usdt_threshold is a TECHNICAL minimum only (must clear the exchange's real spot order minimum too, checked live) -- it is NOT a liquidity buffer meant to be preserved; the intent is to hold as little idle USDT as possible. Set enabled=false to disable without removing the code; delete eth_spot_accumulator.py entirely to remove the feature.",
+  "_comment_eth_spot_accumulator": "Fully optional, isolated hedge (see eth_spot_accumulator.py) -- at every new cycle's genesis, spends 100% of the free USDT balance on a single SPOT market buy of ETH (never touches the short/perpetual strategy). No minimum threshold: it always attempts the purchase with whatever free USDT is available (if > 0), and simply lets Bybit accept or reject the order -- a rejection (e.g. below the exchange's real minimum) is absorbed by the same fail-safe as any other failure, with zero impact on the main strategy. Set enabled=false to disable without removing the code; delete eth_spot_accumulator.py entirely to remove the feature.",
   "eth_spot_accumulator": {
-    "enabled": true,
-    "min_usdt_threshold": 8.0
+    "enabled": true
   },
 
   "_comment_notifier": "Fully optional, isolated Telegram notification (see notifier.py) -- fires once per closed cycle (take profit or trailing stop) with cycle_id, net PnL, total equity (USDT+EUR), and the collateral breakdown per coin. Requires TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID in .env (never here); if missing, silently does nothing. Set enabled=false to disable without removing the code; delete notifier.py entirely to remove the feature.",

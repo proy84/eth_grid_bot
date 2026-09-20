@@ -319,7 +319,6 @@ class GridBotOrchestrator:
             import eth_spot_accumulator
             task = asyncio.create_task(eth_spot_accumulator.maybe_buy_eth_spot(
                 self.exchange, self.cfg.eth_spot_accumulator_enabled,
-                self.cfg.eth_spot_accumulator_min_usdt_threshold,
             ))
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)

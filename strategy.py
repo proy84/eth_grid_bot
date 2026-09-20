@@ -117,7 +117,6 @@ class StrategyConfig:
     equity_based_sizing_enabled: bool
     equity_based_sizing_percentage: float
     eth_spot_accumulator_enabled: bool
-    eth_spot_accumulator_min_usdt_threshold: float
     notifier_enabled: bool
     tick_poll_interval_sec: float
     funding_poll_interval_sec: float
@@ -162,8 +161,6 @@ class StrategyConfig:
             equity_based_sizing_enabled=bool(raw.get("equity_based_sizing", {}).get("enabled", False)),
             equity_based_sizing_percentage=float(raw.get("equity_based_sizing", {}).get("percentage", 1.0)),
             eth_spot_accumulator_enabled=bool(raw.get("eth_spot_accumulator", {}).get("enabled", False)),
-            eth_spot_accumulator_min_usdt_threshold=float(
-                raw.get("eth_spot_accumulator", {}).get("min_usdt_threshold", 8.0)),
             notifier_enabled=bool(raw.get("notifier", {}).get("enabled", False)),
             tick_poll_interval_sec=float(raw["polling"]["tick_poll_interval_sec"]),
             funding_poll_interval_sec=float(raw["polling"]["funding_poll_interval_sec"]),
