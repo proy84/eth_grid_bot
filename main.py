@@ -177,6 +177,11 @@ class GridBotOrchestrator:
         # -- a polling window can re-observe the same real settlement more than
         # once before it ages out of the queried range.
         self._recorded_funding_ids: set = set()
+        # Range offsets that have already received an order THIS cycle --
+        # once a range has fired, it never fires again for the rest of the
+        # cycle, even if price leaves and later revisits that same range.
+        # Reset every new cycle (see _reset_state_after_close).
+        self._used_range_offsets: set = set()
         # Advances forward as settlements are processed, so a cycle that stays
         # open for a very long time (weeks+) never needs more than a handful
         # of NEW settlements per poll -- re-querying the whole cycle's history
@@ -481,6 +486,12 @@ class GridBotOrchestrator:
                 price, breakeven_price,
             )
             return
+        if order.range_offset in self._used_range_offsets:
+            logger.info(
+                "Grid evaluation: close=%.4f -> Range %+d gia' utilizzato in questo ciclo -- nessun secondo ordine.",
+                price, order.range_offset,
+            )
+            return
         if self.cfg.stress_test_enabled and self.cfg.stress_test_neutral_zone_enabled:
             if self._maybe_suspend_for_neutral_zone(price):
                 return
@@ -592,6 +603,12 @@ class GridBotOrchestrator:
             ))
             logger.info("Grid order filled: kind=%s fib_n=%d qty=%.6f price=%.2f notional=%.2f fee=%.4f",
                         order.kind, order.fib_n, filled.qty, filled.price, filled.notional_usdt, fee)
+
+            # Marks this range as used ONLY after a real fill -- a failed
+            # attempt (caught above) never reaches here, so that range stays
+            # eligible for a future try. Reset every new cycle (see
+            # _reset_state_after_close) so each cycle's ranges start fresh.
+            self._used_range_offsets.add(order.range_offset)
 
             # Re-index Range 0 to the freshly-updated Break-Even -- skipped
             # for the cycle's very first fill (was_flat_before), since at
@@ -1003,6 +1020,7 @@ class GridBotOrchestrator:
         self.position.clear()
         self.fee_engine.reset()
         self._recorded_funding_ids.clear()
+        self._used_range_offsets.clear()
         self._funding_since_ms = None
 
         self.grid.full_reset(ref_price)
