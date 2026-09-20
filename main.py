@@ -432,7 +432,7 @@ class GridBotOrchestrator:
                             break
                     else:
                         sleep_sec = self.cfg.stress_test_base_interval_sec
-                        logger.info("[stress-test] Next grid evaluation in %.1fs (base cadence).", sleep_sec)
+                        logger.debug("[stress-test] Next grid evaluation in %.1fs (base cadence).", sleep_sec)
                         if await self._wait_interruptible(sleep_sec):
                             break
                         if self._cadence_reset_event.is_set():
@@ -465,7 +465,7 @@ class GridBotOrchestrator:
                 logger.exception("Failed to fetch mark price for stress-test grid evaluation; skipping this window.")
                 return
             ts_ms = int(time.time() * 1000)
-            logger.info("[stress-test] Tick evaluation: mark=%.4f", price)
+            logger.debug("[stress-test] Tick evaluation: mark=%.4f", price)
         else:
             try:
                 candle = await self.exchange.fetch_last_closed_candle()
@@ -481,13 +481,13 @@ class GridBotOrchestrator:
         base_notional = self._effective_base_notional(price)
         order = evaluate_grid_close(price, self.grid, base_notional, max_fib_level, breakeven_price)
         if order is None:
-            logger.info(
+            logger.debug(
                 "Grid evaluation: close=%.4f sotto il Break-Even (%.4f) -- nessun ordine (mediazione sotto BE disabilitata).",
                 price, breakeven_price,
             )
             return
         if order.range_offset in self._used_range_offsets:
-            logger.info(
+            logger.debug(
                 "Grid evaluation: close=%.4f -> Range %+d gia' utilizzato in questo ciclo -- nessun secondo ordine.",
                 price, order.range_offset,
             )
@@ -532,7 +532,7 @@ class GridBotOrchestrator:
             )
             return False
 
-        logger.info(
+        logger.debug(
             "Neutral Zone attiva (In Pausa): distanza Break-Even=%.3f%% < %.2f%% -- entrata Fibonacci sospesa.",
             dist_pct, self.cfg.stress_test_neutral_zone_percent,
         )
