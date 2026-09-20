@@ -1025,6 +1025,16 @@ class GridBotOrchestrator:
 
         self.grid.full_reset(ref_price)
         self._rsi_tick_mode_active = False
+
+        # Range 0 is claimed for the immediate re-open order RIGHT HERE,
+        # synchronously, while `_position_lock` is still held -- not left to
+        # be marked only after that order's fill confirms (which happens
+        # later, inside `_execute_planned_order`, awaited outside this lock).
+        # Without this, a concurrent grid evaluation landing in the gap
+        # between this reset and that fill would see Range 0 as "not yet
+        # used this cycle" and fire a second order at essentially the same
+        # price -- exactly the duplicate-order-at-cycle-start bug this fixes.
+        self._used_range_offsets.add(0)
         self._trailing_active = False
         self._trailing_lowest_price = None
 
