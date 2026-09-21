@@ -109,6 +109,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1105,12 +1106,16 @@ class GridBotOrchestrator:
 
 async def _run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    # Diagnostic-only: DEBUG scoped to just this bot's own loggers (the
-    # "eth_grid_bot" namespace), NOT the root/ccxt logger -- ccxt's own DEBUG
-    # output dumps full HTTP requests/responses including the X-BAPI-API-KEY
-    # header and per-request signature in plaintext, which must never land
-    # in a log file.
-    logging.getLogger("eth_grid_bot").setLevel(logging.DEBUG)
+    # DEBUG (per-2s tick evaluations, range-already-used skips, etc.) is off
+    # by default -- it floods the console on every device, Termux included.
+    # Turn it on only for a one-off diagnostic session with:
+    #   LOG_LEVEL=DEBUG python main.py
+    # Deliberately scoped to just the "eth_grid_bot" namespace, NOT the root
+    # logger: ccxt's own DEBUG output dumps full HTTP requests/responses
+    # including the X-BAPI-API-KEY header and per-request signature in
+    # plaintext, which must never land in a log file.
+    debug_level = os.environ.get("LOG_LEVEL", "").strip().upper() == "DEBUG"
+    logging.getLogger("eth_grid_bot").setLevel(logging.DEBUG if debug_level else logging.INFO)
     cfg = StrategyConfig.load(CONFIG_PATH)
     bot = GridBotOrchestrator(cfg)
     try:
