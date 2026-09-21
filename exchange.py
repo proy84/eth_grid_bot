@@ -50,6 +50,7 @@ import asyncio
 import logging
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, List, Optional, Tuple
 
@@ -319,8 +320,37 @@ class ExchangeClient:
         only) -- it does NOT include the fill price/quantity, even for a market
         order. Polling `fetch_order` right after is required to get the real
         average price and filled quantity; using the create-order ack directly
-        silently produced price=0.00/qty=0.000000 fills."""
-        order = await self._retry(self._private.create_order, symbol, "market", side, qty, params=params or {})
+        silently produced price=0.00/qty=0.000000 fills.
+
+        A single `clientOrderId` (Bybit's `orderLinkId`) is generated ONCE here
+        and reused across every retry `_retry` performs for THIS call -- not a
+        fresh one per attempt. Without it, a `create_order` request that
+        actually reaches Bybit and opens the position, but whose RESPONSE is
+        lost to a network error on our end (far more likely on a flaky mobile
+        connection than a stable one), makes `_retry` blindly resubmit an
+        identical, unprotected request: Bybit has no way to tell it apart from
+        a genuine second order, so it opens a REAL duplicate position at
+        essentially the same price. With a stable id attached, Bybit instead
+        rejects the resubmission as a duplicate order-link-id (caught below),
+        so we can recover the original fill instead of doubling the position."""
+        order_params = dict(params or {})
+        client_order_id = uuid.uuid4().hex[:24]
+        order_params["clientOrderId"] = client_order_id
+
+        try:
+            order = await self._retry(self._private.create_order, symbol, "market", side, qty,
+                                       params=order_params)
+        except ExchangeError as exc:
+            if not self._is_duplicate_client_order_id_error(exc):
+                raise
+            logger.warning(
+                "create_order (clientOrderId=%s) rejected as a duplicate by Bybit -- a prior "
+                "attempt already went through despite a network error on our end here. "
+                "Recovering that original order instead of treating this as a failed/second "
+                "entry (%s).", client_order_id, exc,
+            )
+            order = await self._find_order_by_client_id(symbol, client_order_id)
+
         order_id = order.get("id")
         if not order_id:
             logger.error("create_order returned no order id for %s %s qty=%.6f: %s", side, symbol, qty, order)
@@ -336,6 +366,44 @@ class ExchangeClient:
         logger.warning("Order %s (%s %s qty=%.6f) did not report a fill after %d polls; "
                         "using the last known order state.", order_id, side, symbol, qty, poll_attempts)
         return detail
+
+    @staticmethod
+    def _is_duplicate_client_order_id_error(exc: Exception) -> bool:
+        """True for Bybit's specific 'this clientOrderId/orderLinkId was
+        already used' rejections (retCode 110072 'OrderLinkedID is duplicate',
+        170141/12141 'Duplicate clientOrderId') -- the exact signal that a
+        retried create_order call is NOT a genuine new order, but Bybit
+        confirming it already has the original. Matched on the raw message
+        text since ccxt re-raises Bybit's response body verbatim rather than
+        exposing retCode as a structured field."""
+        text = str(exc).lower()
+        if any(code in text for code in ("110072", "170141", "12141")):
+            return True
+        return "duplicate" in text and ("orderlinkid" in text or "clientorderid" in text or "order-link" in text)
+
+    async def _find_order_by_client_id(self, symbol: str, client_order_id: str) -> dict:
+        """Recovers the real order after `_is_duplicate_client_order_id_error`
+        fires -- checks closed orders first since a market order normally
+        fills within the time it takes Bybit to even respond to the original
+        request, falling back to open orders for the rare case it hasn't yet.
+        Raises `RuntimeError` if Bybit doesn't actually have a matching order,
+        since silently proceeding with no order data would be worse than
+        failing loudly."""
+        for fetch_fn in (self._private.fetch_closed_orders, self._private.fetch_open_orders):
+            try:
+                orders = await self._retry(fetch_fn, symbol, None, 10, params={"orderLinkId": client_order_id})
+            except Exception:
+                logger.exception("Failed to look up order by clientOrderId=%s via %s",
+                                  client_order_id, getattr(fetch_fn, "__name__", fetch_fn))
+                continue
+            match = next((o for o in orders if o.get("clientOrderId") == client_order_id), None)
+            if match is not None:
+                return match
+
+        raise RuntimeError(
+            f"Bybit reported clientOrderId={client_order_id} as a duplicate, but no matching "
+            f"order could be found on {symbol} -- cannot recover the original fill."
+        )
 
     @staticmethod
     def _to_filled_order(order: dict, side: str) -> FilledOrder:
