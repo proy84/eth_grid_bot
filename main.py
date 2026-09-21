@@ -1105,6 +1105,12 @@ class GridBotOrchestrator:
 
 async def _run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # Diagnostic-only: DEBUG scoped to just this bot's own loggers (the
+    # "eth_grid_bot" namespace), NOT the root/ccxt logger -- ccxt's own DEBUG
+    # output dumps full HTTP requests/responses including the X-BAPI-API-KEY
+    # header and per-request signature in plaintext, which must never land
+    # in a log file.
+    logging.getLogger("eth_grid_bot").setLevel(logging.DEBUG)
     cfg = StrategyConfig.load(CONFIG_PATH)
     bot = GridBotOrchestrator(cfg)
     try:
