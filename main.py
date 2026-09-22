@@ -361,7 +361,7 @@ class GridBotOrchestrator:
             return
         old = self.base_notional_usdt
         self.base_notional_usdt = equity * self.cfg.equity_based_sizing_percentage / 100.0
-        logger.info(
+        logger.debug(
             "Equity-based sizing: equity totale=%.2f USDT -> base_notional_usdt %.2f -> %.2f (%.2f%% dell'equity).",
             equity, old, self.base_notional_usdt, self.cfg.equity_based_sizing_percentage,
         )
@@ -438,7 +438,7 @@ class GridBotOrchestrator:
                             break
                         if self._cadence_reset_event.is_set():
                             self._cadence_reset_event.clear()
-                            logger.info(
+                            logger.debug(
                                 "[stress-test] Cadenza oraria riavviata: nuovo ciclo aperto durante l'attesa -- "
                                 "prossimo ordine schedulato tra %.0fs esatti da adesso.",
                                 self.cfg.stress_test_base_interval_sec,
@@ -496,8 +496,8 @@ class GridBotOrchestrator:
         if self.cfg.stress_test_enabled and self.cfg.stress_test_neutral_zone_enabled:
             if self._maybe_suspend_for_neutral_zone(price):
                 return
-        logger.info("Grid evaluation: close=%.4f base_price=%.4f offset=%d -> fib_n=%d (%s)",
-                    price, self.grid.base_price, order.range_offset, order.fib_n, order.kind)
+        logger.debug("Grid evaluation: close=%.4f base_price=%.4f offset=%d -> fib_n=%d (%s)",
+                     price, self.grid.base_price, order.range_offset, order.fib_n, order.kind)
         await self._execute_planned_order(order, price, ts_ms)
 
     def _maybe_suspend_for_neutral_zone(self, mark_price: float) -> bool:
@@ -557,7 +557,7 @@ class GridBotOrchestrator:
             try:
                 qty = self.exchange.compute_qty_from_notional(order.notional_usdt, ref_price)
             except Exception:
-                logger.info(
+                logger.debug(
                     "notional=%.2f @ prezzo=%.2f e sotto un intero step di precisione dell'exchange "
                     "(quantita arrotondata a zero) -- alzo al minimo tradabile.",
                     order.notional_usdt, ref_price,
@@ -574,7 +574,7 @@ class GridBotOrchestrator:
             # updates forever.
             min_qty = self.exchange.min_order_qty()
             if min_qty > 0 and qty < min_qty:
-                logger.info(
+                logger.debug(
                     "Qty %.6f (da notional=%.2f @ %.2f) sotto il minimo exchange %.6f -> alzata al minimo.",
                     qty, order.notional_usdt, ref_price, min_qty,
                 )
@@ -978,7 +978,7 @@ class GridBotOrchestrator:
 
             self._reset_state_after_close(reset_ref_price)
 
-        logger.info("Reopening the new base SHORT immediately at market (no candle-close wait).")
+        logger.debug("Reopening the new base SHORT immediately at market (no candle-close wait).")
         await self._execute_immediate_base_order(kind="range_zero_reset_immediate")
         # Wakes up `_grid_scheduler_loop` (if it's mid-wait on the base cadence)
         # to abort and restart its countdown fresh from right now -- so the

@@ -166,16 +166,18 @@ class ExchangeClient:
         await self._retry(self._private.load_time_difference)
 
         try:
-            await self._retry(self._private.set_margin_mode, self.cfg.margin_mode, self.cfg.symbol)
+            await self._retry(self._private.set_margin_mode, self.cfg.margin_mode, self.cfg.symbol,
+                               quiet_exchange_errors=True)
         except ExchangeError as exc:
-            logger.info("set_margin_mode(%s, %s): %s (likely already set)",
-                        self.cfg.margin_mode, self.cfg.symbol, exc)
+            logger.debug("set_margin_mode(%s, %s): %s (likely already set)",
+                         self.cfg.margin_mode, self.cfg.symbol, exc)
 
         try:
-            await self._retry(self._private.set_leverage, self.cfg.leverage, self.cfg.symbol)
+            await self._retry(self._private.set_leverage, self.cfg.leverage, self.cfg.symbol,
+                               quiet_exchange_errors=True)
         except ExchangeError as exc:
-            logger.info("set_leverage(%dx, %s): %s (likely already set)",
-                        self.cfg.leverage, self.cfg.symbol, exc)
+            logger.debug("set_leverage(%dx, %s): %s (likely already set)",
+                         self.cfg.leverage, self.cfg.symbol, exc)
 
         logger.info("Exchange ready: symbol=%s timeframe=%s leverage=%dx margin=%s "
                     "[market data: production public | trading: DEMO %s]",
@@ -275,8 +277,8 @@ class ExchangeClient:
     async def place_market_short(self, qty: float) -> FilledOrder:
         order = await self._create_order_and_await_fill(self.cfg.symbol, "sell", qty)
         filled = self._to_filled_order(order, side="sell")
-        logger.info("SHORT opened: qty=%.6f price=%.2f notional=%.2f", filled.qty, filled.price,
-                    filled.notional_usdt)
+        logger.debug("SHORT opened: qty=%.6f price=%.2f notional=%.2f", filled.qty, filled.price,
+                     filled.notional_usdt)
         return filled
 
     async def fetch_open_positions(self) -> List[OpenPosition]:
@@ -307,8 +309,8 @@ class ExchangeClient:
         order = await self._create_order_and_await_fill(self.cfg.symbol, "buy", position.qty,
                                                           params={"reduceOnly": True})
         filled = self._to_filled_order(order, side="buy")
-        logger.info("Position closed: qty=%.6f price=%.2f notional=%.2f", filled.qty, filled.price,
-                    filled.notional_usdt)
+        logger.debug("Position closed: qty=%.6f price=%.2f notional=%.2f", filled.qty, filled.price,
+                     filled.notional_usdt)
         return filled
 
     # -- internals -----------------------------------------------------------
@@ -413,11 +415,20 @@ class ExchangeClient:
         return FilledOrder(order_id=str(order.get("id", "")), side=side, price=price, qty=qty,
                             notional_usdt=price * qty, timestamp_ms=int(ts))
 
-    async def _retry(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    async def _retry(self, func: Callable[..., Any], *args: Any,
+                      quiet_exchange_errors: bool = False, **kwargs: Any) -> Any:
         """Retries transient CCXT network errors with exponential backoff.
         Exchange-level rejections (bad request, insufficient margin, auth
         failures, unsupported-on-demo, etc.) are NOT retried -- they are
-        raised immediately."""
+        raised immediately.
+
+        `quiet_exchange_errors=True` drops the generic ExchangeError log to
+        DEBUG instead of ERROR -- for call sites like `set_leverage`/
+        `set_margin_mode` in `setup()` where the overwhelmingly common
+        "rejection" is just Bybit saying it's already set the way we asked,
+        which the caller already logs its own friendly INFO line for. Left
+        at ERROR (the default) everywhere else, where an ExchangeError
+        really does mean something needs attention."""
         attempt = 0
         name = getattr(func, "__name__", str(func))
         while True:
@@ -433,5 +444,8 @@ class ExchangeClient:
                                name, attempt, self.max_retries, exc, delay)
                 await asyncio.sleep(delay)
             except ExchangeError as exc:
-                logger.error("Exchange rejected %s: %s", name, exc)
+                if quiet_exchange_errors:
+                    logger.debug("Exchange rejected %s: %s", name, exc)
+                else:
+                    logger.error("Exchange rejected %s: %s", name, exc)
                 raise

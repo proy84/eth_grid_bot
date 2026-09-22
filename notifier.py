@@ -138,8 +138,8 @@ async def _notify_cycle_closed_async(exchange_client: Any, cycle_id: int, net_pn
             logger.warning("Notifica ciclo #%d: invio Telegram fallito.", cycle_id, exc_info=True)
             return
 
-        logger.info("Notifica ciclo #%d inviata su Telegram alle %s: %s",
-                    cycle_id, ts, text.replace("\n", " | "))
+        logger.debug("Notifica ciclo #%d inviata su Telegram alle %s: %s",
+                     cycle_id, ts, text.replace("\n", " | "))
     except Exception:
         logger.warning("Notifica ciclo #%d: fallimento imprevisto, ignorato -- il bot prosegue normalmente.",
                         cycle_id, exc_info=True)

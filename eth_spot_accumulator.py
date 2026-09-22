@@ -76,13 +76,14 @@ async def _buy_all_free_usdt(exchange_client: Any) -> None:
         return
 
     if free_usdt <= 0:
-        logger.info("Accumulo spot ETH: saldo USDT libero=%.4f <= 0 -- nessun acquisto.", free_usdt)
+        logger.debug("Accumulo spot ETH: saldo USDT libero=%.4f <= 0 -- nessun acquisto.", free_usdt)
         return
 
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
     try:
         order = await exchange_client._retry(
             private.create_market_buy_order_with_cost, SPOT_SYMBOL, free_usdt,
+            quiet_exchange_errors=True,
         )
         # Parsing the response is included in THIS try block on purpose (not
         # split into a separate one after `return`-ing from except): a
@@ -95,10 +96,13 @@ async def _buy_all_free_usdt(exchange_client: Any) -> None:
         # Covers a genuine Bybit rejection (e.g. below the exchange's real
         # minimum order size, which is no longer pre-checked here on purpose)
         # exactly the same way as any other failure -- logged, swallowed.
-        logger.warning(
+        # DEBUG, no traceback: on a small demo account this is the expected,
+        # routine outcome almost every cycle, not something worth surfacing
+        # on every run -- see LOG_LEVEL=DEBUG in main.py if it's ever needed.
+        logger.debug(
             "[%s UTC] Accumulo spot ETH: ordine FALLITO o rifiutato da Bybit (saldo libero=%.4f USDT) "
             "-- nessun problema per il normale svolgimento della strategia.",
-            ts, free_usdt, exc_info=True,
+            ts, free_usdt,
         )
         return
 
