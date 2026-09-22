@@ -35,6 +35,7 @@ balance, order rejected) is logged, never raised.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -43,6 +44,15 @@ logger = logging.getLogger("eth_grid_bot.spot_accumulator")
 
 SPOT_SYMBOL = "ETH/USDT"  # unified CCXT symbol for Bybit spot (category=spot) --
                           # distinct from the perpetual's "ETH/USDT:USDT"
+
+# Deliberately staggered, not fired the instant a new cycle opens: this call
+# shares the SAME underlying private ccxt client (and Bybit API key) as the
+# perpetual short's own order placement, which fires at that exact moment
+# too. Sending both at once adds avoidable network/API load right when a
+# slow response is most costly (see main.py's create_order dedup retry --
+# a lost response there risks a duplicate short). Delaying this one,
+# unrelated purchase costs nothing: the spot buy has no time-sensitivity.
+STARTUP_DELAY_SEC = 10.0
 
 
 async def maybe_buy_eth_spot(exchange_client: Any, enabled: bool) -> None:
@@ -54,6 +64,7 @@ async def maybe_buy_eth_spot(exchange_client: Any, enabled: bool) -> None:
     if not enabled:
         return
     try:
+        await asyncio.sleep(STARTUP_DELAY_SEC)
         await _buy_all_free_usdt(exchange_client)
     except Exception:
         logger.warning("Accumulo spot ETH: fallimento imprevisto, ignorato -- il bot prosegue normalmente.",
