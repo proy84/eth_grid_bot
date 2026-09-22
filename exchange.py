@@ -107,9 +107,18 @@ class ExchangeClient:
         options.setdefault("defaultType", "swap")
         options.setdefault("adjustForTimeDifference", True)
 
+        # ccxt's default is 10000ms -- too tight on a mobile/Termux connection,
+        # where a request that's merely SLOW (not actually failed) can trip a
+        # client-side timeout, turning into a NetworkError that triggers a
+        # retry of an order-placing call that may have already reached Bybit.
+        # Raised to reduce how often that retry path is even entered; it does
+        # not by itself guarantee a request never times out.
+        REQUEST_TIMEOUT_MS = 25000
+
         # Public market data: unauthenticated, default production host.
         self._public = ccxt_async.bybit({
             "enableRateLimit": True,
+            "timeout": REQUEST_TIMEOUT_MS,
             "options": options,
         })
 
@@ -121,6 +130,7 @@ class ExchangeClient:
             "apiKey": api_key,
             "secret": api_secret,
             "enableRateLimit": True,
+            "timeout": REQUEST_TIMEOUT_MS,
             "options": options,
             "urls": private_urls,
         })
@@ -325,33 +335,22 @@ class ExchangeClient:
         silently produced price=0.00/qty=0.000000 fills.
 
         A single `clientOrderId` (Bybit's `orderLinkId`) is generated ONCE here
-        and reused across every retry `_retry` performs for THIS call -- not a
-        fresh one per attempt. Without it, a `create_order` request that
-        actually reaches Bybit and opens the position, but whose RESPONSE is
-        lost to a network error on our end (far more likely on a flaky mobile
-        connection than a stable one), makes `_retry` blindly resubmit an
-        identical, unprotected request: Bybit has no way to tell it apart from
-        a genuine second order, so it opens a REAL duplicate position at
-        essentially the same price. With a stable id attached, Bybit instead
-        rejects the resubmission as a duplicate order-link-id (caught below),
-        so we can recover the original fill instead of doubling the position."""
+        and reused across every retry attempt for THIS call -- not a fresh one
+        per attempt. See `_create_order_with_dedup` for why a NetworkError on
+        `create_order` specifically CHECKS for that id on Bybit before ever
+        resubmitting, rather than resubmitting first and only reacting to an
+        explicit duplicate rejection: a blind resubmit risks a real duplicate
+        position if Bybit's own request actually went through (response lost
+        to the network on our end, more likely on mobile than on a stable
+        connection) -- and, observed live, Bybit's own orderLinkId-uniqueness
+        check does not always catch two near-simultaneous submissions of the
+        same id, so waiting for it to reject the resubmission is not enough
+        on its own."""
         order_params = dict(params or {})
         client_order_id = uuid.uuid4().hex[:24]
         order_params["clientOrderId"] = client_order_id
 
-        try:
-            order = await self._retry(self._private.create_order, symbol, "market", side, qty,
-                                       params=order_params)
-        except ExchangeError as exc:
-            if not self._is_duplicate_client_order_id_error(exc):
-                raise
-            logger.warning(
-                "create_order (clientOrderId=%s) rejected as a duplicate by Bybit -- a prior "
-                "attempt already went through despite a network error on our end here. "
-                "Recovering that original order instead of treating this as a failed/second "
-                "entry (%s).", client_order_id, exc,
-            )
-            order = await self._find_order_by_client_id(symbol, client_order_id)
+        order = await self._create_order_with_dedup(symbol, side, qty, order_params, client_order_id)
 
         order_id = order.get("id")
         if not order_id:
@@ -383,14 +382,12 @@ class ExchangeClient:
             return True
         return "duplicate" in text and ("orderlinkid" in text or "clientorderid" in text or "order-link" in text)
 
-    async def _find_order_by_client_id(self, symbol: str, client_order_id: str) -> dict:
-        """Recovers the real order after `_is_duplicate_client_order_id_error`
-        fires -- checks closed orders first since a market order normally
+    async def _try_find_order_by_client_id(self, symbol: str, client_order_id: str) -> Optional[dict]:
+        """Looks up an order by `clientOrderId` (Bybit's `orderLinkId`) without
+        raising -- checks closed orders first since a market order normally
         fills within the time it takes Bybit to even respond to the original
         request, falling back to open orders for the rare case it hasn't yet.
-        Raises `RuntimeError` if Bybit doesn't actually have a matching order,
-        since silently proceeding with no order data would be worse than
-        failing loudly."""
+        Returns None if nothing matches (a genuine "not found", not an error)."""
         for fetch_fn in (self._private.fetch_closed_orders, self._private.fetch_open_orders):
             try:
                 orders = await self._retry(fetch_fn, symbol, None, 10, params={"orderLinkId": client_order_id})
@@ -401,11 +398,71 @@ class ExchangeClient:
             match = next((o for o in orders if o.get("clientOrderId") == client_order_id), None)
             if match is not None:
                 return match
+        return None
 
-        raise RuntimeError(
-            f"Bybit reported clientOrderId={client_order_id} as a duplicate, but no matching "
-            f"order could be found on {symbol} -- cannot recover the original fill."
-        )
+    async def _create_order_with_dedup(self, symbol: str, side: str, qty: float,
+                                        order_params: dict, client_order_id: str) -> dict:
+        """create_order with CHECK-BEFORE-RESUBMIT semantics on network error.
+
+        The naive approach -- resubmit on NetworkError and rely on Bybit
+        rejecting the resubmission as a duplicate clientOrderId -- was tried
+        first and observed live to be insufficient: Bybit's own orderLinkId-
+        uniqueness check does not appear to be atomic against two requests
+        carrying the same id arriving close together, so BOTH can come back
+        as genuine, separately filled orders with no duplicate error raised
+        at all (two distinct order ids, no error in our own logs -- exactly
+        what a Termux trade-history screenshot showed).
+
+        So here, a NetworkError does NOT immediately resubmit: it first asks
+        Bybit whether an order with our `client_order_id` already exists. If
+        it does, that original order is used and no second request is ever
+        sent. Only a genuine "nothing there yet" makes it resubmit. This
+        moves the race from "hope Bybit's dedup catches it" to "never send a
+        second real order-placing request without checking first" -- the
+        check-then-act still isn't perfectly atomic either, but it needs
+        Bybit to be slow AND our check to land in a much narrower window,
+        instead of relying on a rejection that has already been seen to not
+        always happen."""
+        attempt = 0
+        while True:
+            try:
+                return await self._private.create_order(symbol, "market", side, qty, params=order_params)
+            except NetworkError as exc:
+                attempt += 1
+                if attempt > self.max_retries:
+                    logger.error("Max retries (%d) exceeded calling create_order: %s", self.max_retries, exc)
+                    raise
+                delay = self.retry_base_delay_sec * (2 ** (attempt - 1))
+                logger.warning(
+                    "Network error on create_order (attempt %d/%d): %s -- checking whether it actually "
+                    "went through (clientOrderId=%s) before resubmitting.",
+                    attempt, self.max_retries, exc, client_order_id,
+                )
+                await asyncio.sleep(delay)
+                existing = await self._try_find_order_by_client_id(symbol, client_order_id)
+                if existing is not None:
+                    logger.warning(
+                        "Found the ORIGINAL order (id=%s) already on Bybit for clientOrderId=%s -- the "
+                        "network error only lost the response, the request itself had gone through. "
+                        "Using it instead of resubmitting.", existing.get("id"), client_order_id,
+                    )
+                    return existing
+                logger.warning("No order found yet for clientOrderId=%s -- safe to resubmit.", client_order_id)
+            except ExchangeError as exc:
+                if not self._is_duplicate_client_order_id_error(exc):
+                    logger.error("Exchange rejected create_order: %s", exc)
+                    raise
+                logger.warning(
+                    "create_order (clientOrderId=%s) rejected as a duplicate by Bybit -- a prior attempt "
+                    "already went through. Recovering that original order (%s).", client_order_id, exc,
+                )
+                existing = await self._try_find_order_by_client_id(symbol, client_order_id)
+                if existing is None:
+                    raise RuntimeError(
+                        f"Bybit reported clientOrderId={client_order_id} as a duplicate, but no matching "
+                        f"order could be found on {symbol} -- cannot recover the original fill."
+                    )
+                return existing
 
     @staticmethod
     def _to_filled_order(order: dict, side: str) -> FilledOrder:
