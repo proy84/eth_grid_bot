@@ -106,6 +106,7 @@ class StrategyConfig:
     leverage: int
     margin_mode: str
     grid_step_pct: float
+    grid_step_table_pct: List[float]
     base_notional_usdt: float
     trailing_stop_enabled: bool
     trailing_activation_pct: float
@@ -151,6 +152,7 @@ class StrategyConfig:
             leverage=int(raw["leverage"]),
             margin_mode=raw["margin_mode"],
             grid_step_pct=float(os.environ.get("GRID_STEP_PERCENT") or raw["grid_step_pct"]) / 100.0,
+            grid_step_table_pct=[float(x) / 100.0 for x in raw.get("grid_step_table_pct", [])],
             base_notional_usdt=float(raw["base_notional_usdt"]),
             trailing_stop_enabled=bool(raw["trailing_stop"].get("enabled", True)),
             trailing_activation_pct=float(raw["trailing_stop"]["activation_pct"]),
@@ -202,8 +204,19 @@ class PlannedOrder:
 
 @dataclass
 class RangeGrid:
-    """Geometric price ladder, `AbsoluteLevel_N = base_price * (1 + step_pct) ** N`
-    for any integer N, PLUS a floating re-indexing point `zero_index`.
+    """Price ladder, PLUS a floating re-indexing point `zero_index`.
+
+    ASYMMETRIC by design: BELOW-or-at the anchor (absolute level <= 0),
+    every step is the same fixed `step_pct` --
+    `AbsoluteLevel_N = base_price * (1 + step_pct) ** N` for N <= 0, exactly
+    as before. ABOVE the anchor (N > 0), each individual step can be its own
+    percentage via `step_table_pct` -- step i (0-indexed) is the distance
+    from absolute level i to level i+1, so `step_table_pct[0]` is Level_0 ->
+    Level_1, `step_table_pct[1]` is Level_1 -> Level_2, and so on. Once N
+    exceeds `len(step_table_pct)`, every further step repeats
+    `step_table_pct[-1]` indefinitely -- there is no upper bound on N.
+    An empty `step_table_pct` falls back to the old symmetric behavior
+    (every step, up or down, uses `step_pct`).
 
     The price QUOTES are immutable for the whole cycle: `base_price` is set
     ONCE, via `full_reset`, and never mutated again until the next cycle --
@@ -222,26 +235,88 @@ class RangeGrid:
     Range 0 "follow" Break-Even automatically."""
     base_price: float
     step_pct: float
+    step_table_pct: List[float] = field(default_factory=list)
     zero_index: int = 0
+
+    def __post_init__(self) -> None:
+        self._rebuild_boundary_ratios()
+
+    def _rebuild_boundary_ratios(self) -> None:
+        """Precomputes the price ratio (relative to `base_price`) at every
+        absolute level 0..len(step_table_pct) -- cheap since the table has a
+        handful of entries, and avoids re-multiplying the whole chain on
+        every single price evaluation (called every couple of seconds in
+        stress-test mode)."""
+        ratios = [1.0]
+        for step in self.step_table_pct:
+            ratios.append(ratios[-1] * (1.0 + step))
+        self._boundary_ratios = ratios
+
+    def _positive_ratio(self, n: int) -> float:
+        """Price ratio (relative to `base_price`) at absolute level n >= 0,
+        using the progressive `step_table_pct` up to its length and then the
+        table's last step repeated indefinitely -- or plain `step_pct` if no
+        table is configured (n==0 always returns 1.0 either way)."""
+        if not self.step_table_pct:
+            return (1.0 + self.step_pct) ** n
+        k = len(self.step_table_pct)
+        if n <= k:
+            return self._boundary_ratios[n]
+        return self._boundary_ratios[k] * (1.0 + self.step_table_pct[-1]) ** (n - k)
+
+    def _ratio_for_absolute_level(self, n: int) -> float:
+        if n <= 0:
+            return (1.0 + self.step_pct) ** n
+        return self._positive_ratio(n)
 
     def level_price(self, offset: int) -> float:
         """Price of the level currently LABELED `offset` (relative to the
         current Range 0, i.e. `zero_index`)."""
-        return self.base_price * (1.0 + self.step_pct) ** (self.zero_index + offset)
+        return self.base_price * self._ratio_for_absolute_level(self.zero_index + offset)
 
     def _absolute_offset(self, price: float) -> int:
         """Integer ABSOLUTE level N (relative to the fixed `base_price`
         anchor, ignoring `zero_index`) such that price falls in
         `(AbsoluteLevel_N, AbsoluteLevel_{N+1}]` (a price exactly on a level
-        boundary is assigned to the LOWER level, mirroring rule 5). This is
-        the one true coordinate system -- price quotes are computed from
-        this and `zero_index` never enters into it."""
+        boundary is assigned to the LOWER level, mirroring rule 5 -- this
+        includes N=0 itself: a price exactly AT the anchor classifies as -1,
+        which is why `reindex_to_breakeven`'s callers skip invoking it on a
+        cycle's very first fill). This is the one true coordinate system --
+        price quotes are computed from this and `zero_index` never enters
+        into it."""
         ratio = price / self.base_price
-        raw = math.log(ratio) / math.log1p(self.step_pct)
+        if ratio < 1.0 or not self.step_table_pct:
+            # Below (or at) the anchor, or no progressive table configured
+            # at all: single fixed step_pct, same formula as before.
+            raw = math.log(ratio) / math.log1p(self.step_pct)
+            rounded = round(raw)
+            if abs(raw - rounded) < 1e-9:
+                raw = float(rounded)
+            return math.ceil(raw) - 1
+        return self._invert_positive_ratio(ratio)
+
+    def _invert_positive_ratio(self, ratio: float) -> int:
+        """Inverse of `_positive_ratio` for ratio >= 1.0, honoring the same
+        "exact boundary -> one level below" rule as the fixed-step formula."""
+        boundaries = self._boundary_ratios
+        k = len(self.step_table_pct)
+
+        for m, b in enumerate(boundaries):
+            if abs(ratio - b) / b < 1e-9:
+                return m - 1
+
+        for n in range(k):
+            if boundaries[n] < ratio < boundaries[n + 1]:
+                return n
+
+        # Beyond the table entirely -- closed form using the constant last
+        # step, anchored at the table's own last boundary instead of at 1.0.
+        last_step = self.step_table_pct[-1]
+        raw = math.log(ratio / boundaries[k]) / math.log1p(last_step)
         rounded = round(raw)
         if abs(raw - rounded) < 1e-9:
             raw = float(rounded)
-        return math.ceil(raw) - 1
+        return k + (math.ceil(raw) - 1)
 
     def classify_offset(self, price: float) -> int:
         """LABELED offset from the current Range 0: `absolute_offset(price)

@@ -162,7 +162,8 @@ class GridBotOrchestrator:
         # overwrites it from the live market price (or an existing position's entry
         # price) before the grid is ever evaluated. There is no config-driven default --
         # the grid has no fixed price list, only a step percentage.
-        self.grid = RangeGrid(base_price=0.0, step_pct=cfg.grid_step_pct)
+        self.grid = RangeGrid(base_price=0.0, step_pct=cfg.grid_step_pct,
+                              step_table_pct=cfg.grid_step_table_pct)
         self.position = PositionManager()
         self.fee_engine = FeeEngine(schedule=FeeSchedule(taker_rate=cfg.taker_rate, maker_rate=cfg.maker_rate))
         self.analytics = AnalyticsEngine(cfg.trade_history_path)
