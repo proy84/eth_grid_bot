@@ -312,7 +312,7 @@ class GridBotOrchestrator:
         base_notional = self._effective_base_notional(mark_price)
         order = PlannedOrder(range_offset=0, fib_n=1,
                               notional_usdt=fibonacci(1) * base_notional, kind=kind)
-        await self._execute_planned_order(order, mark_price, int(time.time() * 1000))
+        await self._execute_planned_order(order, mark_price, int(time.time() * 1000), self.cycle_id)
 
         # Optional, fully isolated feature (see eth_spot_accumulator.py):
         # deliberately NOT `await`ed -- runs as a background task so a slow
@@ -460,6 +460,14 @@ class GridBotOrchestrator:
                 )
 
     async def _run_grid_evaluation(self) -> None:
+        # Captured BEFORE any `await` below, so it reflects whichever cycle
+        # is actually current at the instant this evaluation started -- see
+        # `_execute_planned_order`'s re-check under the lock for why this
+        # matters (a slow exchange call further down can let a concurrent
+        # take-profit close+reopen finish while this evaluation is still in
+        # flight, computed against a cycle that no longer exists by the time
+        # it would otherwise execute).
+        evaluation_cycle_id = self.cycle_id
         if self.cfg.stress_test_enabled:
             try:
                 price = await self.exchange.fetch_mark_price()
@@ -499,7 +507,7 @@ class GridBotOrchestrator:
                 return
         logger.debug("Grid evaluation: close=%.4f base_price=%.4f offset=%d -> fib_n=%d (%s)",
                      price, self.grid.base_price, order.range_offset, order.fib_n, order.kind)
-        await self._execute_planned_order(order, price, ts_ms)
+        await self._execute_planned_order(order, price, ts_ms, evaluation_cycle_id)
 
     def _maybe_suspend_for_neutral_zone(self, mark_price: float) -> bool:
         """Neutral Zone (stress-test only): pauses Fibonacci accumulation
@@ -544,10 +552,33 @@ class GridBotOrchestrator:
         return (self._current_rsi is not None
                 and self._current_rsi >= self.cfg.stress_test_rsi_overbought_threshold)
 
-    async def _execute_planned_order(self, order: PlannedOrder, ref_price: float, ts_ms: int) -> None:
+    async def _execute_planned_order(self, order: PlannedOrder, ref_price: float, ts_ms: int,
+                                      evaluation_cycle_id: int) -> None:
         """Holds `_position_lock` for its entire body so a concurrent take-profit
         close can never observe a half-added entry (or vice versa)."""
         async with self._position_lock:
+            # `order` was computed by the caller against whatever cycle was
+            # current AT THAT TIME (`evaluation_cycle_id`) -- but this call
+            # may have been sitting here waiting for the lock while a
+            # take-profit close+reopen ran to completion (e.g. a slow/stuck
+            # `close_position_market()` call holds the lock for a long time
+            # on a bad connection). If the cycle has since moved on, `order`
+            # is stale: it was sized/classified against a grid and Break-Even
+            # that no longer exist, and executing it now would land a real
+            # order at whatever today's price is, right on top of the NEW
+            # cycle's own legitimate opening order -- exactly the
+            # duplicate-order-at-cycle-start symptom this closes, for any
+            # range, not just Range 0 (see `_used_range_offsets`, which only
+            # protects against a stale order for the SAME cycle).
+            if evaluation_cycle_id != self.cycle_id:
+                logger.warning(
+                    "Ordine scartato: calcolato per il ciclo #%d (offset=%+d, notional=%.2f), ma il ciclo "
+                    "attuale e' gia' #%d -- probabile chiusura/riapertura avvenuta mentre questo ordine "
+                    "era in coda per il lock.", evaluation_cycle_id, order.range_offset, order.notional_usdt,
+                    self.cycle_id,
+                )
+                return
+
             # `compute_qty_from_notional` itself can raise `InvalidOrder` (CCXT's
             # `amount_to_precision`) when notional/price rounds to LESS than one
             # full precision step -- it doesn't clamp to zero, it throws. So the
