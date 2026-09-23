@@ -11,15 +11,15 @@
   },
 
   "_comment_symbol_timeframe": "symbol and grid_step_pct below are fallback defaults, overridden by .env's SYMBOL / GRID_STEP_PERCENT when set. timeframe drives the grid-evaluation clock automatically: '5m' evaluates at XX:05:01/XX:10:01/... (fast testing), '1h' evaluates at HH:00:01 (production).",
-  "symbol": "ETH/USDT:USDT",
+  "symbol": "TRX/USDT:USDT",
   "timeframe": "1m",
-  "leverage": 150,
+  "leverage": 75,
   "margin_mode": "cross",
   "position_side": "short",
 
-  "grid_step_pct": 0.3,
-  "_comment_grid_step_table_pct": "Overrides grid_step_pct ONLY going UP from Range 0 (Range +1, +2, +3, ...) with a per-step percentage instead of one fixed value: entry i is the distance from Range i to Range i+1 (entry 0 = Range 0->+1, entry 1 = Range +1->+2, etc). Once Range climbs past the table's length, every further step repeats the LAST entry forever (0.30% here, indefinitely). Going DOWN from Range 0 (Range -1, -2, ...) always uses the fixed grid_step_pct above, unaffected by this table. Add/remove/edit entries freely -- any length works. Leave as [] to disable and make the grid fully symmetric again (grid_step_pct on both sides, the pre-v1.3.1 behavior).",
-  "grid_step_table_pct": [0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.10, 0.30],
+  "grid_step_pct": 0.2,
+  "_comment_grid_step_table_pct": "Overrides grid_step_pct ONLY going UP from Range 0 (Range +1, +2, +3, ...) with a per-step percentage instead of one fixed value: entry i is the distance from Range i to Range i+1 (entry 0 = Range 0->+1, entry 1 = Range +1->+2, etc). Once Range climbs past the table's length, every further step repeats the LAST entry forever. Going DOWN from Range 0 (Range -1, -2, ...) always uses the fixed grid_step_pct above, unaffected by this table. Add/remove/edit entries freely -- any length works. Leave as [] to disable and make the grid fully symmetric again (grid_step_pct on both sides, the pre-v1.3.1 behavior) -- currently disabled, every range (up and down) uses the flat 0.2% grid_step_pct above.",
+  "grid_step_table_pct": [],
   "base_notional_usdt": 1.0,
 
   "_comment_trailing_stop": "enabled=false -> FIXED take profit: closes the whole position at market the instant mark_price first drops activation_pct% BELOW the current Break-Even NETTO price (already fee/funding-adjusted) -- single threshold, no arming, no trailing (distance_pct is ignored in this mode). enabled=true -> SHORT-only TRAILING stop: arms at that same activation_pct% threshold, then pins the initial stop distance_pct% ABOVE the arming price and only ever trails down on new lows. Both percentages are real PRICE percentages, not leveraged-margin percentages.",
@@ -43,7 +43,7 @@
   "_comment_equity_based_sizing": "Replaces auto_compound above when enabled=true: at the start of every cycle (bootstrap and every immediate re-open after a close), re-reads the account's real total equity (Bybit V5 totalEquity, all collateral assets combined) and sets base_notional_usdt to percentage% of it. Self-correcting -- grows only if the account actually grew, shrinks on its own after a drawdown -- instead of compounding blindly by cycle count. base_notional_usdt above is only the seed value used before the first equity read, or if a read ever fails.",
   "equity_based_sizing": {
     "enabled": true,
-    "percentage": 1.0
+    "percentage": 39.4028
   },
 
   "_comment_eth_spot_accumulator": "Fully optional, isolated hedge (see eth_spot_accumulator.py) -- at every new cycle's genesis, spends 100% of the free USDT balance on a single SPOT market buy of ETH (never touches the short/perpetual strategy). No minimum threshold: it always attempts the purchase with whatever free USDT is available (if > 0), and simply lets Bybit accept or reject the order -- a rejection (e.g. below the exchange's real minimum) is absorbed by the same fail-safe as any other failure, with zero impact on the main strategy. Set enabled=false to disable without removing the code; delete eth_spot_accumulator.py entirely to remove the feature.",
