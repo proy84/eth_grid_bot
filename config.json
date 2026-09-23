@@ -11,9 +11,9 @@
   },
 
   "_comment_symbol_timeframe": "symbol and grid_step_pct below are fallback defaults, overridden by .env's SYMBOL / GRID_STEP_PERCENT when set. timeframe drives the grid-evaluation clock automatically: '5m' evaluates at XX:05:01/XX:10:01/... (fast testing), '1h' evaluates at HH:00:01 (production).",
-  "symbol": "TRX/USDT:USDT",
+  "symbol": "ETH/USDT:USDT",
   "timeframe": "1m",
-  "leverage": 75,
+  "leverage": 150,
   "margin_mode": "cross",
   "position_side": "short",
 
@@ -43,7 +43,7 @@
   "_comment_equity_based_sizing": "Replaces auto_compound above when enabled=true: at the start of every cycle (bootstrap and every immediate re-open after a close), re-reads the account's real total equity (Bybit V5 totalEquity, all collateral assets combined) and sets base_notional_usdt to percentage% of it. Self-correcting -- grows only if the account actually grew, shrinks on its own after a drawdown -- instead of compounding blindly by cycle count. base_notional_usdt above is only the seed value used before the first equity read, or if a read ever fails.",
   "equity_based_sizing": {
     "enabled": true,
-    "percentage": 0.5
+    "percentage": 1.0
   },
 
   "_comment_eth_spot_accumulator": "Fully optional, isolated hedge (see eth_spot_accumulator.py) -- at every new cycle's genesis, spends 100% of the free USDT balance on a single SPOT market buy of ETH (never touches the short/perpetual strategy). No minimum threshold: it always attempts the purchase with whatever free USDT is available (if > 0), and simply lets Bybit accept or reject the order -- a rejection (e.g. below the exchange's real minimum) is absorbed by the same fail-safe as any other failure, with zero impact on the main strategy. Set enabled=false to disable without removing the code; delete eth_spot_accumulator.py entirely to remove the feature.",
