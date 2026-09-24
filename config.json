@@ -19,7 +19,7 @@
 
   "grid_step_pct": 0.2,
   "_comment_grid_step_table_pct": "Overrides grid_step_pct ONLY going UP from Range 0 (Range +1, +2, +3, ...) with a per-step percentage instead of one fixed value: entry i is the distance from Range i to Range i+1 (entry 0 = Range 0->+1, entry 1 = Range +1->+2, etc). Once Range climbs past the table's length, every further step repeats the LAST entry forever. Going DOWN from Range 0 (Range -1, -2, ...) always uses the fixed grid_step_pct above, unaffected by this table. Add/remove/edit entries freely -- any length works. Leave as [] to disable and make the grid fully symmetric again (grid_step_pct on both sides, the pre-v1.3.1 behavior) -- currently disabled, every range (up and down) uses the flat 0.2% grid_step_pct above.",
-  "grid_step_table_pct": [],
+  "grid_step_table_pct": [0.10, 0.15, 0.22, 0.32, 0.47, 0.70, 1.02, 1.51, 2.23, 3.28, 4.00],
   "base_notional_usdt": 1.0,
 
   "_comment_trailing_stop": "enabled=false -> FIXED take profit: closes the whole position at market the instant mark_price first drops activation_pct% BELOW the current Break-Even NETTO price (already fee/funding-adjusted) -- single threshold, no arming, no trailing (distance_pct is ignored in this mode). enabled=true -> SHORT-only TRAILING stop: arms at that same activation_pct% threshold, then pins the initial stop distance_pct% ABOVE the arming price and only ever trails down on new lows. Both percentages are real PRICE percentages, not leveraged-margin percentages.",
