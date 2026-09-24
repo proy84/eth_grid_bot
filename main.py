@@ -136,6 +136,17 @@ CONFIG_PATH = "config.json"
 CANDLE_CLOSE_OFFSET_SEC = 1.0  # evaluate the grid 1s after each timeframe boundary
 RSI_POLL_INTERVAL_SEC = 15.0  # how often the tick loop re-checks for a newly-closed RSI candle
 STOP_SIGNAL_PATH = Path("STOP")  # touch this file (same dir as main.py) for a clean remote shutdown
+# Extra safety net against the rare/still-not-fully-diagnosed duplicate-
+# opening-order bug (a stale grid evaluation from the previous cycle
+# occasionally still slips through the cycle_id check under just the right
+# timing): for this many seconds after a new cycle's automatic opening order
+# starts firing, the grid scheduler refuses to fire ANY other order, no
+# matter which range it targets. All duplicates observed so far landed
+# within ~1s of the opening order, so this window is deliberately generous.
+# A band-aid, not a real fix -- it suppresses the symptom regardless of root
+# cause, at the cost of occasionally skipping a genuine, fast-moving early
+# mediation order too.
+ONE_ORDER_WINDOW_SEC = 2.0
 
 
 def parse_timeframe_seconds(timeframe: str) -> int:
@@ -206,6 +217,10 @@ class GridBotOrchestrator:
         # order, instead of the base cadence ticking on its own independent
         # schedule regardless of cycle boundaries.
         self._cadence_reset_event = asyncio.Event()
+        # Set (monotonic clock) at the instant every new cycle's automatic
+        # opening order starts firing -- see ONE_ORDER_WINDOW_SEC below and
+        # its use in `_run_grid_evaluation`.
+        self._cycle_opened_at = time.monotonic()
         # Updated by the tick loop every `tick_poll_interval_sec`; used by the
         # stress-test scheduler to pick the next evaluation delay without an
         # extra dedicated price fetch. Only ever a few seconds stale, which is
@@ -301,6 +316,11 @@ class GridBotOrchestrator:
     async def _execute_immediate_base_order(self, kind: str) -> None:
         """Fires the Range 0 base SHORT (Fibonacci(1) * BASE_NOTIONAL_USDT) at market,
         bypassing the candle-close wait. Used at startup and right after a Take Profit reset."""
+        # Starts the ONE_ORDER_WINDOW_SEC clock (see `_run_grid_evaluation`)
+        # as early as possible, right as this cycle's one guaranteed order
+        # begins -- not after it finishes, since that already covers any
+        # slowness in placing it.
+        self._cycle_opened_at = time.monotonic()
         try:
             mark_price = await self.exchange.fetch_mark_price()
         except Exception:
@@ -500,6 +520,14 @@ class GridBotOrchestrator:
             logger.debug(
                 "Grid evaluation: close=%.4f -> Range %+d gia' utilizzato in questo ciclo -- nessun secondo ordine.",
                 price, order.range_offset,
+            )
+            return
+        seconds_since_cycle_open = time.monotonic() - self._cycle_opened_at
+        if seconds_since_cycle_open < ONE_ORDER_WINDOW_SEC:
+            logger.warning(
+                "Ordine scartato: solo %.2fs dall'apertura del ciclo (offset=%+d, fib_n=%d) -- consentito un "
+                "solo ordine nei primi %.0fs per proteggersi da eventuali ordini fantasma di un ciclo precedente.",
+                seconds_since_cycle_open, order.range_offset, order.fib_n, ONE_ORDER_WINDOW_SEC,
             )
             return
         if self.cfg.stress_test_enabled and self.cfg.stress_test_neutral_zone_enabled:
