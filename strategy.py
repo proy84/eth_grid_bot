@@ -86,13 +86,33 @@ def fibonacci(n: int) -> int:
     Iterative on purpose (not the textbook recursive definition): with
     `risk.max_fib_level` disabled (`stress_test.unlimited_fib_level=true`),
     `n` has no upper bound, and Python's default recursion limit (1000)
-    would otherwise turn a large-enough grid offset into a crash."""
+    would otherwise turn a large-enough grid offset into a crash.
+
+    Kept for reference/tests, but NOT used for order sizing any more --
+    see `level_multiplier`, which replaced it as the actual sizing function
+    so the growth ratio between consecutive levels is a configurable
+    constant instead of true Fibonacci's own ratio (which only APPROACHES
+    the golden ratio ~1.618 asymptotically; it isn't constant at the small
+    n this bot actually reaches most of the time)."""
     if n <= 0:
         return 0
     a, b = 0, 1
     for _ in range(n - 1):
         a, b = b, a + b
     return b
+
+
+def level_multiplier(n: int, ratio: float) -> float:
+    """Sizing multiplier for level `n` (1-indexed, same numbering as the old
+    `fibonacci(n)`): a plain geometric progression, `ratio ** (n - 1)`, so
+    level 1 is always exactly the base unit (ratio**0 == 1) regardless of
+    `ratio`, level 2 is `ratio` times the base, level 3 is `ratio**2`, and so
+    on -- a constant growth factor between consecutive levels, unlike real
+    Fibonacci's own ratio which varies (and only settles near 1.618 for
+    large n). `ratio` is `StrategyConfig.sizing_growth_ratio`."""
+    if n <= 0:
+        return 0.0
+    return ratio ** (n - 1)
 
 
 # --------------------------------------------------------------------------- #
@@ -125,6 +145,7 @@ class StrategyConfig:
     trade_history_path: str
     state_export_path: str
     max_fib_level: int
+    sizing_growth_ratio: float
     exchange_id: str
     exchange_options: dict
     exchange_urls: Optional[dict]
@@ -171,6 +192,7 @@ class StrategyConfig:
             trade_history_path=raw["paths"]["trade_history_path"],
             state_export_path=raw["paths"]["state_export_path"],
             max_fib_level=int(raw["risk"]["max_fib_level"]),
+            sizing_growth_ratio=float(raw["risk"].get("sizing_growth_ratio", 1.6180339887)),
             exchange_id=raw["exchange"]["id"],
             exchange_options=raw["exchange"].get("options", {}),
             exchange_urls=raw["exchange"].get("urls"),
@@ -380,7 +402,7 @@ def compute_rsi(closes: List[float], period: int) -> Optional[float]:
 
 
 def evaluate_grid_close(price: float, grid: RangeGrid, base_notional_usdt: float,
-                         max_fib_level: Optional[int],
+                         max_fib_level: Optional[int], sizing_growth_ratio: float,
                          breakeven_price: Optional[float] = None) -> Optional[PlannedOrder]:
     """Grid evaluation, run on EVERY candle close of the configured timeframe
     (rule 2). Returns exactly one order UNLESS price is below Break-Even (see
@@ -403,12 +425,20 @@ def evaluate_grid_close(price: float, grid: RangeGrid, base_notional_usdt: float
         -- or `breakeven_price is None` (no position yet, e.g. the very
         first order of a cycle, though that path bypasses this function
         entirely in `main.py`) -- the usual progression applies:
-        `Fibonacci(|offset| + 1) * BASE_NOTIONAL_USDT`, symmetric whether
-        `offset` (the signed distance in `grid_step_pct` steps from the
-        fixed anchor) is positive, negative, or zero.
+        `level_multiplier(|offset| + 1, sizing_growth_ratio) * BASE_NOTIONAL_USDT`,
+        symmetric whether `offset` (the signed distance in `grid_step_pct`
+        steps from the fixed anchor) is positive, negative, or zero.
 
     `max_fib_level=None` disables the safety cap entirely (stress-test mode):
-    the Fibonacci level grows without bound as |offset| increases.
+    the level grows without bound as |offset| increases.
+
+    `sizing_growth_ratio` is the constant multiplier applied between one
+    level and the next (`StrategyConfig.sizing_growth_ratio`, e.g. 2.05 --
+    level 1 is always the base unit regardless of this value; level 2 is
+    `sizing_growth_ratio` times the base, level 3 is `sizing_growth_ratio**2`,
+    etc). Replaces the old real-Fibonacci-sequence sizing so the growth rate
+    is an explicit, constant, user-tunable number instead of Fibonacci's own
+    ratio (which isn't constant at small n).
     """
     offset = grid.classify_offset(price)
 
@@ -420,7 +450,7 @@ def evaluate_grid_close(price: float, grid: RangeGrid, base_notional_usdt: float
         logger.warning("Fib level %d (range offset %d) exceeds max_fib_level=%d; capping at %d.",
                         n, offset, max_fib_level, max_fib_level)
         n = max_fib_level
-    notional = fibonacci(n) * base_notional_usdt
+    notional = level_multiplier(n, sizing_growth_ratio) * base_notional_usdt
     return PlannedOrder(range_offset=offset, fib_n=n, notional_usdt=notional, kind="fibonacci")
 
 

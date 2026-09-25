@@ -127,6 +127,7 @@ from strategy import (
     compute_rsi,
     evaluate_grid_close,
     fibonacci,
+    level_multiplier,
 )
 
 logger = logging.getLogger("eth_grid_bot.main")
@@ -331,7 +332,8 @@ class GridBotOrchestrator:
         await self._maybe_update_base_notional_from_equity()
         base_notional = self._effective_base_notional(mark_price)
         order = PlannedOrder(range_offset=0, fib_n=1,
-                              notional_usdt=fibonacci(1) * base_notional, kind=kind)
+                              notional_usdt=level_multiplier(1, self.cfg.sizing_growth_ratio) * base_notional,
+                              kind=kind)
         await self._execute_planned_order(order, mark_price, int(time.time() * 1000), self.cycle_id)
 
         # Optional, fully isolated feature (see eth_spot_accumulator.py):
@@ -509,7 +511,8 @@ class GridBotOrchestrator:
             else self.cfg.max_fib_level
         breakeven_price = None if self.position.is_flat else self.position.avg_entry_price
         base_notional = self._effective_base_notional(price)
-        order = evaluate_grid_close(price, self.grid, base_notional, max_fib_level, breakeven_price)
+        order = evaluate_grid_close(price, self.grid, base_notional, max_fib_level,
+                                     self.cfg.sizing_growth_ratio, breakeven_price)
         if order is None:
             logger.debug(
                 "Grid evaluation: close=%.4f sotto il Break-Even (%.4f) -- nessun ordine (mediazione sotto BE disabilitata).",
