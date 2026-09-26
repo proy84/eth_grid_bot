@@ -132,7 +132,7 @@ from strategy import (
 
 logger = logging.getLogger("eth_grid_bot.main")
 
-BOT_VERSION = "1.3"
+BOT_VERSION = "1.4"
 CONFIG_PATH = "config.json"
 CANDLE_CLOSE_OFFSET_SEC = 1.0  # evaluate the grid 1s after each timeframe boundary
 RSI_POLL_INTERVAL_SEC = 15.0  # how often the tick loop re-checks for a newly-closed RSI candle
